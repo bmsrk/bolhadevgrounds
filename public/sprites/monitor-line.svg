@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 40">
+  <!-- Screen background – deep purple-black -->
+  <rect width="60" height="40" rx="3" fill="#0f0a1e"/>
+  <!-- Grid lines -->
+  <line x1="5" y1="12" x2="57" y2="12" stroke="#9b59b6" stroke-width="0.4" opacity="0.25"/>
+  <line x1="5" y1="24" x2="57" y2="24" stroke="#9b59b6" stroke-width="0.4" opacity="0.25"/>
+  <!-- Area fill below the trend line -->
+  <polygon
+    points="5,34 14,27 23,20 32,24 41,14 50,9 57,6 57,34"
+    fill="#9b59b6" opacity="0.15"/>
+  <!-- Trend line -->
+  <polyline
+    points="5,34 14,27 23,20 32,24 41,14 50,9 57,6"
+    fill="none" stroke="#9b59b6" stroke-width="1.8"
+    stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- Data-point dots (gradient accent toward latest) -->
+  <circle cx="5"  cy="34" r="2"   fill="#9b59b6"/>
+  <circle cx="14" cy="27" r="2"   fill="#9b59b6"/>
+  <circle cx="23" cy="20" r="2"   fill="#9b59b6"/>
+  <circle cx="32" cy="24" r="2"   fill="#9b59b6"/>
+  <circle cx="41" cy="14" r="2"   fill="#b371d8"/>
+  <circle cx="50" cy="9"  r="2"   fill="#b371d8"/>
+  <circle cx="57" cy="6"  r="2.5" fill="#e044ff"/>
+  <!-- Screen-edge glow border -->
+  <rect x="1" y="1" width="58" height="38" rx="2" fill="none" stroke="#9b59b6" stroke-width="0.5" opacity="0.20"/>
+</svg>

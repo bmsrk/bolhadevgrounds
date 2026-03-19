@@ -99,6 +99,7 @@ export interface FurnitureShape {
   r?: number;           // circle only
   color: string;
   label?: string;
+  sprite?: string;      // optional sprite name – loaded from public/sprites/<name>.svg
 }
 
 export interface GameMap {
