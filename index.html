@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Startup Devgrounds</title>
+    <link rel="icon" href="./favicon.svg" />
+    <style>
+      /* Reset */
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        background: #1a1a2e;
+        overflow: hidden;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        color: #e0e0e0;
+      }
+      #game-canvas {
+        display: block;
+        position: fixed;
+        top: 0; left: 0;
+      }
+      /* All overlay panels sit on top of the canvas */
+      #overlay {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100vw; height: 100vh;
+        pointer-events: none; /* children opt-in with pointer-events: auto */
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game-canvas"></canvas>
+    <div id="overlay"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
