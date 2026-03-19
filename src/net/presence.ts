@@ -1,4 +1,4 @@
-import type { PeerState, PositionSample } from '../types.js';
+import type { PeerState, PositionSample, CharacterName, AnimState, Facing } from '../types.js';
 import { PEER_TIMEOUT_MS, SMOOTHING_SAMPLES } from '../constants.js';
 
 /**
@@ -9,55 +9,64 @@ export type PeerStore = Map<string, PeerState>;
 
 /** Add or reset a peer entry (called on 'hello'). */
 export function upsertPeer(
-  store: PeerStore,
-  peerId: string,
-  playerId: string,
-  name: string,
-  color: string,
-  x: number,
-  y: number,
+  store:     PeerStore,
+  peerId:    string,
+  playerId:  string,
+  name:      string,
+  color:     string,
+  character: CharacterName,
+  x:         number,
+  y:         number,
 ): void {
   const existing = store.get(peerId);
   if (existing) {
-    existing.playerId = playerId;
-    existing.name     = name;
-    existing.color    = color;
-    existing.renderX  = x;
-    existing.renderY  = y;
-    existing.lastSeen = Date.now();
-    existing.samples  = [{ x, y, ts: Date.now() }];
-    existing.seq      = 0;
+    existing.playerId  = playerId;
+    existing.name      = name;
+    existing.color     = color;
+    existing.character = character;
+    existing.renderX   = x;
+    existing.renderY   = y;
+    existing.lastSeen  = Date.now();
+    existing.samples   = [{ x, y, ts: Date.now() }];
+    existing.seq       = 0;
   } else {
     store.set(peerId, {
       peerId,
       playerId,
       name,
       color,
-      renderX: x,
-      renderY: y,
-      samples: [{ x, y, ts: Date.now() }],
-      lastSeen: Date.now(),
-      seq: 0,
+      character,
+      animState: 'idle_anim',
+      facing:    'down',
+      renderX:   x,
+      renderY:   y,
+      samples:   [{ x, y, ts: Date.now() }],
+      lastSeen:  Date.now(),
+      seq:       0,
     });
   }
 }
 
 /** Record a position sample from an incoming 'state' message. */
 export function recordSample(
-  store: PeerStore,
-  peerId: string,
-  x: number,
-  y: number,
-  seq: number,
-  ts: number,
+  store:     PeerStore,
+  peerId:    string,
+  x:         number,
+  y:         number,
+  seq:       number,
+  ts:        number,
+  animState: AnimState,
+  facing:    Facing,
 ): void {
   const peer = store.get(peerId);
   if (!peer) return;
 
   // Drop out-of-order packets
   if (seq <= peer.seq) return;
-  peer.seq      = seq;
-  peer.lastSeen = Date.now();
+  peer.seq       = seq;
+  peer.lastSeen  = Date.now();
+  peer.animState = animState;
+  peer.facing    = facing;
 
   const sample: PositionSample = { x, y, ts };
   peer.samples.push(sample);

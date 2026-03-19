@@ -1,5 +1,36 @@
-import type { GameMap } from '../types.js';
+import type { GameMap, TileLayer, InteractiveObject } from '../types.js';
 import { WORLD_WIDTH, WORLD_HEIGHT } from '../constants.js';
+
+// ── Floor tile layer (Room Builder 16 × 16) ───────────────────────────────────
+// World is exactly 1280 × 720 = 80 × 45 tiles at 16 px each.
+// Tile IDs are row-major within the sheet: id = sheetRow * sheetCols + sheetCol.
+// Tile 0 is the first tile in the top-left corner of Room_Builder_free_16x16.png.
+// Adjust the tile IDs below after inspecting the sheet to pick the correct floors.
+const _TILE_COLS = 80;   // WORLD_WIDTH  / 16
+const _TILE_ROWS = 45;   // WORLD_HEIGHT / 16
+
+const _floorLayer: TileLayer = {
+  sheet:   'room-builder',
+  mapCols: _TILE_COLS,
+  mapRows: _TILE_ROWS,
+  tileW:   16,
+  tileH:   16,
+  data:    Array.from({ length: _TILE_COLS * _TILE_ROWS }, () => 0),
+  offsetX: 0,
+  offsetY: 0,
+  z:       0,
+  alpha:   0.45,   // semi-transparent so the dark world bg shows through
+};
+
+// ── Interactive proximity objects ─────────────────────────────────────────────
+// These are checked each frame in main.ts; a tooltip is shown when the local
+// player is within `r` px of the object centre.
+export const INTERACTIVE_OBJECTS: readonly InteractiveObject[] = [
+  { x: 190, y: 440, r: 45, label: '☕ Grab a coffee' },
+  { x: 550, y: 130, r: 65, label: '📋 Join the meeting' },
+  { x: 785, y: 285, r: 55, label: '📝 View architecture' },
+  { x:  95, y: 570, r: 55, label: '🛋️ Take a break' },
+];
 
 /**
  * Static map definition for "Startup Devgrounds".
@@ -81,12 +112,15 @@ export const GAME_MAP: GameMap = {
 
   // ── Furniture shapes (visual only, no collision) ────────────────────────
   furniture: [
-    // Open workspace monitors – alternate bar/line charts by row
+    // Open workspace monitors – vary by row and column
     ...[60, 130, 200].flatMap((y, rowIdx) => {
-      const sprite = rowIdx === 1 ? 'monitor-line' : 'monitor-bar';
-      return [42, 162, 282].map(x => ({
-        type: 'rect' as const, x, y: y + 8, w: 30, h: 22, color: '#1a3a6a', sprite,
-      }));
+      return [42, 162, 282].map((x, colIdx) => {
+        const sprite =
+          rowIdx === 2 && colIdx === 2 ? 'monitor-idle' :
+          rowIdx === 1               ? 'monitor-line'  :
+                                       'monitor-bar';
+        return { type: 'rect' as const, x, y: y + 8, w: 30, h: 22, color: '#1a3a6a', sprite };
+      });
     }),
 
     // Conference table top
@@ -132,6 +166,9 @@ export const GAME_MAP: GameMap = {
     // Whiteboard (engineering area) – network architecture graph
     { type: 'rect', x: 725, y: 260, w: 120, h: 50, color: '#f0f0ff', label: '📝 Board', sprite: 'whiteboard-graph' },
 
+    // Lounge wall screen (video call)
+    { type: 'rect', x: 55, y: 592, w: 90, h: 55, color: '#0a0a1a', sprite: 'monitor-video' },
+
     // Plant dots
     { type: 'circle', x: 390, y: 40,  r: 12, color: '#1a5a1a' },
     { type: 'circle', x: 390, y: 290, r: 12, color: '#1a5a1a' },
@@ -139,4 +176,6 @@ export const GAME_MAP: GameMap = {
     { type: 'circle', x: 1250,y: 690, r: 12, color: '#1a5a1a' },
     { type: 'circle', x: 40,  y: 690, r: 12, color: '#1a5a1a' },
   ],
+
+  tiles: [_floorLayer],
 };

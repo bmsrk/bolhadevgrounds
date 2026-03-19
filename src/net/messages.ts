@@ -1,4 +1,4 @@
-import type { NetMsg } from '../types.js';
+import type { NetMsg, CharacterName, AnimState, Facing } from '../types.js';
 
 export type SendFn = (msg: NetMsg, peerId?: string) => void;
 export type RecvFn = (msg: NetMsg, peerId: string) => void;
@@ -31,7 +31,10 @@ export function decodeMsg(raw: unknown): NetMsg | null {
         typeof obj['y'] === 'number' &&
         typeof obj['color'] === 'string'
       ) {
-        return { type: 'hello', playerId: obj['playerId'], name: obj['name'], x: obj['x'], y: obj['y'], color: obj['color'] };
+        const CHARS: readonly string[] = ['Adam', 'Alex', 'Amelia', 'Bob'];
+        const character = (CHARS.includes(obj['character'] as string)
+          ? obj['character'] : 'Adam') as CharacterName;
+        return { type: 'hello', playerId: obj['playerId'], name: obj['name'], x: obj['x'], y: obj['y'], color: obj['color'], character };
       }
       break;
     case 'state':
@@ -42,7 +45,13 @@ export function decodeMsg(raw: unknown): NetMsg | null {
         typeof obj['seq'] === 'number' &&
         typeof obj['ts'] === 'number'
       ) {
-        return { type: 'state', playerId: obj['playerId'], x: obj['x'], y: obj['y'], seq: obj['seq'], ts: obj['ts'] };
+        const ANIM_STATES: readonly string[] = ['idle', 'idle_anim', 'walk', 'run', 'sit', 'phone'];
+        const FACINGS:     readonly string[] = ['down', 'left', 'right', 'up'];
+        const animState = (ANIM_STATES.includes(obj['animState'] as string)
+          ? obj['animState'] : 'idle_anim') as AnimState;
+        const facing = (FACINGS.includes(obj['facing'] as string)
+          ? obj['facing'] : 'down') as Facing;
+        return { type: 'state', playerId: obj['playerId'], x: obj['x'], y: obj['y'], seq: obj['seq'], ts: obj['ts'], animState, facing };
       }
       break;
     case 'chat':
