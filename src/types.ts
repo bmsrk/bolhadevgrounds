@@ -119,7 +119,9 @@ export interface FurnitureShape {
   r?:      number;         // circle only
   color:   string;
   label?:  string;
-  sprite?: string;         // optional sprite key – SVG from public/sprites/<key>.svg
+  sprite?: string;         // SVG sprite key (legacy – prefer tileSprite)
+  /** Pixel-art tile sprite drawn from a loaded TileSheet (see loadTileSheet). */
+  tileSprite?: { sheet: string; tileId: number };
 }
 
 /**

@@ -1,16 +1,17 @@
 /**
  * src/game/animation.ts — Character sprite-sheet animation state machine.
  *
- * Sheet layout assumptions (LimeZu "Modern Tiles Free" characters, 16 × 16 grid):
+ * Sheet layout (LimeZu "Modern Tiles Free" characters, 16 × 32 px frames):
  *
- *   <Char>_16x16.png          — 1 frame  × 1 row   idle static (fallback)
- *   <Char>_idle_anim_16x16.png — 4 frames × 1 row   idle breathing loop
- *   <Char>_run_16x16.png      — 6 frames × 4 rows   walk/run (rows: down/left/right/up)
- *   <Char>_phone_16x16.png    — 2 frames × 1 row    on-phone animation
- *   <Char>_sit_16x16.png      — 1 frame  × 1 row    sitting (variant 1)
+ *   <Char>_16x16.png      — 1 frame  (full atlas, static idle at srcX=0, srcY=0)
+ *   <Char>_idle_16x16.png — 4 frames × 1 row   idle breathing loop
+ *   <Char>_run_16x16.png  — 6 frames × 4 directions, laid out HORIZONTALLY in one row:
+ *                           down (0–5) · left (6–11) · right (12–17) · up (18–23)
+ *   <Char>_phone_16x16.png — frames × 1 row  on-phone animation
+ *   <Char>_sit_16x16.png  — frames × 1 row  sitting
  *
- * Character sprite source dimensions: 16 px wide × 32 px tall.
- * Adjust CHAR_W / CHAR_H here if your sheets differ.
+ * All sheets are a single 32 px-tall row; directions vary the X offset only.
+ * Character sprite source dimensions: CHAR_W=16 px wide × CHAR_H=32 px tall.
  */
 
 import type { AnimState, Facing, CharacterName, Animator } from '../types.js';
@@ -19,12 +20,19 @@ import type { AnimState, Facing, CharacterName, Animator } from '../types.js';
 export const CHAR_W = 16;
 export const CHAR_H = 32;
 
-/** Maps facing direction → sheet row in the run/walk sheet. */
-const FACING_ROW: Record<Facing, number> = {
+/**
+ * Maps facing direction → starting frame column in the run/walk sheet.
+ *
+ * All four directions are laid out horizontally in a single 32 px-tall row:
+ *   down (frames 0–5) · left (frames 6–11) · right (frames 12–17) · up (frames 18–23)
+ *
+ * Source formula: srcX = (FACING_COL[facing] + frame) * CHAR_W,  srcY = 0
+ */
+const FACING_COL: Record<Facing, number> = {
   down:  0,
-  left:  1,
-  right: 2,
-  up:    3,
+  left:  6,
+  right: 12,
+  up:    18,
 };
 
 /** Animation playback speed (frames per second) per state. */
@@ -121,8 +129,8 @@ export function getFrameSource(
     case 'run':
       return {
         sheetKey: `${c}-run`,
-        srcX: anim.frame * CHAR_W,
-        srcY: FACING_ROW[anim.facing]! * CHAR_H,
+        srcX: (FACING_COL[anim.facing]! + anim.frame) * CHAR_W,
+        srcY: 0,    // all directions are in one horizontal row
       };
 
     case 'phone':
