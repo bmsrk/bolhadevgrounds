@@ -4,7 +4,7 @@
  */
 
 import { WORLD_WIDTH, WORLD_HEIGHT, PLAYER_COLORS, SEND_HZ, MAX_CHAT_MESSAGES } from './constants.js';
-import type { GameState, LocalPlayer, NetMsg, ChatEntry, CharacterName, Facing } from './types.js';
+import type { GameState, LocalPlayer, NetMsg, ChatEntry, CharacterName, CharacterVariant, Facing } from './types.js';
 import { GAME_MAP, INTERACTIVE_OBJECTS } from './game/map.js';
 import { startLoop } from './game/loop.js';
 import { initInput, getInput } from './game/input.js';
@@ -48,14 +48,24 @@ function colorFromId(id: string): string {
   return PLAYER_COLORS[idx] ?? '#4a9eff';
 }
 
-/** Deterministic character assignment from player ID. */
-const _CHAR_NAMES: readonly CharacterName[] = ['Adam', 'Alex', 'Amelia', 'Bob'];
-function characterFromId(id: string): CharacterName {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) {
-    hash = ((hash << 5) - hash + id.charCodeAt(i + 1 | 0)) | 0;
-  }
-  return _CHAR_NAMES[Math.abs(hash) % _CHAR_NAMES.length] ?? 'Adam';
+const ALL_CHAR_NAMES: readonly CharacterName[] = ['Adam', 'Alex', 'Amelia', 'Bob'];
+
+function getSavedCharacter(): CharacterName {
+  const saved = localStorage.getItem('playerCharacter') as CharacterName | null;
+  return ALL_CHAR_NAMES.includes(saved!) ? saved as CharacterName : 'Adam';
+}
+
+function getSavedVariant(): CharacterVariant {
+  const raw = Number(localStorage.getItem('playerVariant'));
+  return (raw >= 1 && raw <= 6) ? (raw as CharacterVariant) : 1;
+}
+
+function saveCharacter(char: CharacterName): void {
+  localStorage.setItem('playerCharacter', char);
+}
+
+function saveVariant(variant: CharacterVariant): void {
+  localStorage.setItem('playerVariant', String(variant));
 }
 
 /** Read room name from ?room= query parameter; fall back to 'lobby'. */
@@ -79,7 +89,8 @@ const local: LocalPlayer = {
   x:         WORLD_WIDTH  / 2,
   y:         WORLD_HEIGHT / 2,
   color:     colorFromId(playerId),
-  character: characterFromId(playerId),
+  character: getSavedCharacter(),
+  variant:   getSavedVariant(),
 };
 
 const state: GameState = {
@@ -120,7 +131,7 @@ window.addEventListener('resize', () => resizeCanvas(canvas));
 //
 // Direction column layout for 6-frame-per-direction sheets:
 //   down (0–5) · left (6–11) · right (12–17) · up (18–23)
-for (const char of _CHAR_NAMES) {
+for (const char of ALL_CHAR_NAMES) {
   const n    = char;
   const base = `pixelart/Modern tiles_Free/Characters_free/${n}`;
   loadSheet(`${n.toLowerCase()}-idle`,      `${base}_idle_16x16.png`,       CHAR_W, CHAR_H);
@@ -166,6 +177,7 @@ function broadcastHello(): void {
     y:         state.local.y,
     color:     state.local.color,
     character: state.local.character,
+    variant:   state.local.variant,
   });
 }
 
@@ -173,7 +185,7 @@ function handleMsg(msg: NetMsg, peerId: string): void {
   switch (msg.type) {
     case 'hello': {
       const isNewPeer = !state.peers.has(peerId);
-      upsertPeer(state.peers, peerId, msg.playerId, msg.name, msg.color, msg.character, msg.x, msg.y);
+      upsertPeer(state.peers, peerId, msg.playerId, msg.name, msg.color, msg.character, msg.variant, msg.x, msg.y);
       // Reply with our own hello only once the name is set and only to newcomers
       if (isNewPeer && _nameEntered && roomHandle) {
         roomHandle.send({
@@ -184,6 +196,7 @@ function handleMsg(msg: NetMsg, peerId: string): void {
           y:         state.local.y,
           color:     state.local.color,
           character: state.local.character,
+          variant:   state.local.variant,
         }, peerId);
       }
       // Race-condition: another peer arrived at the same time with the same name.
@@ -255,6 +268,7 @@ roomHandle = joinGameRoom(
       y:         state.local.y,
       color:     state.local.color,
       character: state.local.character,
+      variant:   state.local.variant,
     }, peerId);
   },
   // onPeerLeave
@@ -289,8 +303,17 @@ function findUniqueName(base: string, taken: Set<string>): string {
 initOverlay(
   roomId,
   savedName,
+  getSavedCharacter(),
+  getSavedVariant(),
   // getTakenNames — checked before name is accepted
   getTakenNames,
+  // onCharacterSelect — called when character or variant changes in the selector
+  (char: CharacterName, variant: CharacterVariant) => {
+    state.local.character = char;
+    state.local.variant   = variant;
+    saveCharacter(char);
+    saveVariant(variant);
+  },
   // onNameSave
   (name: string) => {
     saveName(name);

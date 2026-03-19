@@ -1,4 +1,4 @@
-import type { GameState, CharacterName, Animator } from '../types.js';
+import type { GameState, CharacterName, CharacterVariant, Animator } from '../types.js';
 import type { GameMap } from '../types.js';
 import { PLAYER_RADIUS } from '../constants.js';
 import { getSprite, drawSheetFrame } from './sprites.js';
@@ -10,6 +10,16 @@ const NAME_FONT    = '12px "Segoe UI", system-ui, sans-serif';
 const ZONE_FONT    = 'bold 13px "Segoe UI", system-ui, sans-serif';
 const HUD_FONT     = 'bold 16px "Segoe UI", system-ui, sans-serif';
 const TOOLTIP_FONT = '12px "Segoe UI", system-ui, sans-serif';
+
+/** CSS filter string applied to a sprite for each colour variant (60° hue steps). */
+const VARIANT_FILTER: Record<number, string> = {
+  1: 'none',
+  2: 'hue-rotate(60deg)',
+  3: 'hue-rotate(120deg)',
+  4: 'hue-rotate(180deg)',
+  5: 'hue-rotate(240deg)',
+  6: 'hue-rotate(300deg)',
+};
 
 /** Resize the canvas to fill the window. Returns true if size changed. */
 export function resizeCanvas(canvas: HTMLCanvasElement): boolean {
@@ -142,11 +152,11 @@ export function render(
   for (const peer of state.peers.values()) {
     const peerAnim: Readonly<Animator> = state.peerAnimators.get(peer.peerId)
       ?? { state: 'idle_anim', facing: 'down', frame: 0, timer: 0 };
-    drawPlayer(ctx, peer.renderX, peer.renderY, peer.color, peer.name, false, peer.character, peerAnim);
+    drawPlayer(ctx, peer.renderX, peer.renderY, peer.color, peer.name, false, peer.character, peer.variant, peerAnim);
   }
 
   // ── Local player ──────────────────────────────────────────────────────────
-  drawPlayer(ctx, state.local.x, state.local.y, state.local.color, state.local.name, true, state.local.character, state.localAnimator);
+  drawPlayer(ctx, state.local.x, state.local.y, state.local.color, state.local.name, true, state.local.character, state.local.variant, state.localAnimator);
 
   // ── Ambient particles (Lounge dust motes) ────────────────────────────────
   for (const p of state.particles) {
@@ -226,6 +236,7 @@ function drawPlayer(
   name:      string,
   isLocal:   boolean,
   character: CharacterName,
+  variant:   CharacterVariant,
   anim:      Readonly<Animator>,
 ): void {
   const DW = CHAR_W * 2;            // 32 px on canvas
@@ -234,7 +245,12 @@ function drawPlayer(
   const dy = Math.round(y) - DH;    // feet at player.y
 
   const { sheetKey, srcX, srcY } = getFrameSource(character, anim);
+
+  // Apply hue-rotate filter for colour variants 2–6
+  const filter = VARIANT_FILTER[variant] ?? 'none';
+  if (filter !== 'none') ctx.filter = filter;
   const drawn = drawSheetFrame(ctx, sheetKey, srcX, srcY, dx, dy, DW, DH);
+  if (filter !== 'none') ctx.filter = 'none';
 
   if (!drawn) {
     // Sprite not yet loaded – fall back to the original coloured circle

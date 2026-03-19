@@ -1,4 +1,4 @@
-import type { PeerState, PositionSample, CharacterName, AnimState, Facing } from '../types.js';
+import type { PeerState, PositionSample, CharacterName, CharacterVariant, AnimState, Facing } from '../types.js';
 import { PEER_TIMEOUT_MS, SMOOTHING_SAMPLES } from '../constants.js';
 
 /**
@@ -15,6 +15,7 @@ export function upsertPeer(
   name:      string,
   color:     string,
   character: CharacterName,
+  variant:   CharacterVariant,
   x:         number,
   y:         number,
 ): void {
@@ -24,6 +25,7 @@ export function upsertPeer(
     existing.name      = name;
     existing.color     = color;
     existing.character = character;
+    existing.variant   = variant;
     existing.renderX   = x;
     existing.renderY   = y;
     existing.lastSeen  = Date.now();
@@ -36,6 +38,7 @@ export function upsertPeer(
       name,
       color,
       character,
+      variant,
       animState: 'idle_anim',
       facing:    'down',
       renderX:   x,

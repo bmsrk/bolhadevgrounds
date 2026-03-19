@@ -1,8 +1,10 @@
 // ─── Animation & character ────────────────────────────────────────────────────
 
-export type AnimState    = 'idle' | 'idle_anim' | 'walk' | 'run' | 'sit' | 'sit2' | 'sit3' | 'phone';
-export type Facing       = 'down' | 'left' | 'right' | 'up';
-export type CharacterName = 'Adam' | 'Alex' | 'Amelia' | 'Bob';
+export type AnimState       = 'idle' | 'idle_anim' | 'walk' | 'run' | 'sit' | 'sit2' | 'sit3' | 'phone';
+export type Facing          = 'down' | 'left' | 'right' | 'up';
+export type CharacterName   = 'Adam' | 'Alex' | 'Amelia' | 'Bob';
+/** 1 = original colours; 2–6 = hue-rotated variants (60° steps). */
+export type CharacterVariant = 1 | 2 | 3 | 4 | 5 | 6;
 
 export interface Animator {
   state:  AnimState;
@@ -14,12 +16,13 @@ export interface Animator {
 // ─── Identity ────────────────────────────────────────────────────────────────
 
 export interface LocalPlayer {
-  id:        string;         // UUID, sessionStorage
-  name:      string;         // localStorage, editable
+  id:        string;            // UUID, sessionStorage
+  name:      string;            // localStorage, editable
   x:         number;
   y:         number;
-  color:     string;         // deterministic from id
-  character: CharacterName;  // deterministic from id hash
+  color:     string;            // deterministic from id
+  character: CharacterName;     // user-selected, localStorage
+  variant:   CharacterVariant;  // user-selected colour variant, localStorage
 }
 
 // ─── Network messages (discriminated union) ───────────────────────────────────
@@ -32,6 +35,7 @@ export interface HelloMsg {
   y:         number;
   color:     string;
   character: CharacterName;
+  variant:   CharacterVariant;
 }
 
 export interface StateMsg {
@@ -81,6 +85,7 @@ export interface PeerState {
   name:      string;
   color:     string;
   character: CharacterName;
+  variant:   CharacterVariant;
   animState: AnimState;
   facing:    Facing;
   // Rendered position (smoothed)
