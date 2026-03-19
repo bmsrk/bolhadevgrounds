@@ -108,10 +108,11 @@ function broadcastHello(): void {
 
 function handleMsg(msg: NetMsg, peerId: string): void {
   switch (msg.type) {
-    case 'hello':
+    case 'hello': {
+      const isNewPeer = !state.peers.has(peerId);
       upsertPeer(state.peers, peerId, msg.playerId, msg.name, msg.color, msg.x, msg.y);
-      // Reply with our own hello so the newcomer sees us
-      if (roomHandle) {
+      // Reply with our own hello only once so the newcomer sees us
+      if (isNewPeer && roomHandle) {
         roomHandle.send({
           type: 'hello',
           playerId: state.local.id,
@@ -122,6 +123,7 @@ function handleMsg(msg: NetMsg, peerId: string): void {
         }, peerId);
       }
       break;
+    }
 
     case 'state':
       recordSample(state.peers, peerId, msg.x, msg.y, msg.seq, msg.ts);
