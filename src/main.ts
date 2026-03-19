@@ -10,6 +10,7 @@ import { startLoop } from './game/loop.js';
 import { initInput, getInput } from './game/input.js';
 import { movePlayer } from './game/physics.js';
 import { render, resizeCanvas } from './game/render.js';
+import { preloadSprites } from './game/sprites.js';
 import { joinGameRoom } from './net/room.js';
 import type { RoomHandle } from './net/room.js';
 import { upsertPeer, recordSample, smoothPeers, evictStalePeers } from './net/presence.js';
@@ -84,6 +85,16 @@ if (!ctx) throw new Error('Could not get 2D context');
 
 resizeCanvas(canvas);
 window.addEventListener('resize', () => resizeCanvas(canvas));
+
+// ── Sprite pre-loading ────────────────────────────────────────────────────
+
+preloadSprites([
+  'monitor-bar',
+  'monitor-line',
+  'monitor-design',
+  'monitor-product',
+  'whiteboard-graph',
+]);
 
 // ── Input ─────────────────────────────────────────────────────────────────
 

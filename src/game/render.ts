@@ -1,6 +1,7 @@
 import type { GameState } from '../types.js';
 import type { GameMap } from '../types.js';
 import { PLAYER_RADIUS } from '../constants.js';
+import { getSprite } from './sprites.js';
 
 const LABEL_FONT   = '11px "Segoe UI", system-ui, sans-serif';
 const NAME_FONT    = '12px "Segoe UI", system-ui, sans-serif';
@@ -67,14 +68,21 @@ export function render(
     ctx.lineWidth = 1;
 
     if (item.type === 'rect' && item.w !== undefined && item.h !== undefined) {
-      ctx.fillRect(item.x, item.y, item.w, item.h);
-      ctx.strokeRect(item.x, item.y, item.w, item.h);
-      if (item.label) {
-        ctx.font = LABEL_FONT;
-        ctx.fillStyle = 'rgba(255,255,255,0.6)';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(item.label, item.x + item.w / 2, item.y + item.h / 2);
+      const img = item.sprite ? getSprite(item.sprite) : undefined;
+      if (img) {
+        // Sprite is ready – draw the SVG image directly (no border / label needed)
+        ctx.drawImage(img, item.x, item.y, item.w, item.h);
+      } else {
+        // Sprite not yet loaded or not set – fall back to plain coloured rectangle
+        ctx.fillRect(item.x, item.y, item.w, item.h);
+        ctx.strokeRect(item.x, item.y, item.w, item.h);
+        if (item.label) {
+          ctx.font = LABEL_FONT;
+          ctx.fillStyle = 'rgba(255,255,255,0.6)';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(item.label, item.x + item.w / 2, item.y + item.h / 2);
+        }
       }
     } else if (item.type === 'circle' && item.r !== undefined) {
       ctx.beginPath();

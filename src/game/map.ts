@@ -81,12 +81,13 @@ export const GAME_MAP: GameMap = {
 
   // ── Furniture shapes (visual only, no collision) ────────────────────────
   furniture: [
-    // Open workspace monitors
-    ...[60, 130, 200].flatMap(y => [
-      { type: 'rect' as const, x: 42, y: y + 8, w: 30, h: 22, color: '#1a3a6a' },
-      { type: 'rect' as const, x: 162, y: y + 8, w: 30, h: 22, color: '#1a3a6a' },
-      { type: 'rect' as const, x: 282, y: y + 8, w: 30, h: 22, color: '#1a3a6a' },
-    ]),
+    // Open workspace monitors – alternate bar/line charts by row
+    ...[60, 130, 200].flatMap((y, rowIdx) => {
+      const sprite = rowIdx === 1 ? 'monitor-line' : 'monitor-bar';
+      return [42, 162, 282].map(x => ({
+        type: 'rect' as const, x, y: y + 8, w: 30, h: 22, color: '#1a3a6a', sprite,
+      }));
+    }),
 
     // Conference table top
     { type: 'rect', x: 462, y: 82, w: 176, h: 96, color: '#2a5070', label: '📋 Meeting' },
@@ -105,16 +106,21 @@ export const GAME_MAP: GameMap = {
     { type: 'circle', x: 648, y: 110, r: 10, color: '#1e3a50' },
     { type: 'circle', x: 648, y: 140, r: 10, color: '#1e3a50' },
 
-    // Engineering monitors
+    // Engineering monitors – line/trend charts (purple theme)
     ...[50, 140].flatMap(y =>
       [740, 840, 940, 1040].map(x => ({
-        type: 'rect' as const, x: x + 2, y: y + 6, w: 36, h: 26, color: '#2a1a4a',
+        type: 'rect' as const, x: x + 2, y: y + 6, w: 36, h: 26, color: '#2a1a4a', sprite: 'monitor-line',
       }))
     ),
 
-    // Design monitors
+    // Design monitors – color-palette + wireframe (red theme)
     ...[740, 840, 940, 1040].map(x => ({
-      type: 'rect' as const, x: x + 2, y: 386, w: 36, h: 26, color: '#4a1a2a',
+      type: 'rect' as const, x: x + 2, y: 386, w: 36, h: 26, color: '#4a1a2a', sprite: 'monitor-design',
+    })),
+
+    // Product area monitors – KPI metrics + trend (orange theme)
+    ...[300, 420, 540].map(x => ({
+      type: 'rect' as const, x: x + 2, y: 386, w: 36, h: 26, color: '#3a2008', sprite: 'monitor-product',
     })),
 
     // Lounge sofa detail
@@ -123,8 +129,8 @@ export const GAME_MAP: GameMap = {
     // Coffee table
     { type: 'rect', x: 160, y: 420, w: 60, h: 40, color: '#3a2a08', label: '☕' },
 
-    // Whiteboard (engineering area)
-    { type: 'rect', x: 725, y: 260, w: 120, h: 50, color: '#f0f0ff', label: '📝 Board' },
+    // Whiteboard (engineering area) – network architecture graph
+    { type: 'rect', x: 725, y: 260, w: 120, h: 50, color: '#f0f0ff', label: '📝 Board', sprite: 'whiteboard-graph' },
 
     // Plant dots
     { type: 'circle', x: 390, y: 40,  r: 12, color: '#1a5a1a' },
