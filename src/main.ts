@@ -107,18 +107,29 @@ window.addEventListener('resize', () => resizeCanvas(canvas));
 
 // ── Sprite pre-loading ────────────────────────────────────────────────────
 
-// Preload pixel-art character sprite sheets (16 × 32 px frames)
-// idle-anim uses the 4-frame directional idle sheet (_idle_16x16.png).
-// run uses a single-row sheet with all 4 directions laid out horizontally:
-//   down (0-5) · left (6-11) · right (12-17) · up (18-23)
+// Preload pixel-art character sprite sheets (16 × 32 px frames).
+//
+// Sheet keys and corresponding PNG files per character:
+//   <char>-idle       → <Char>_idle_16x16.png       4 frames (1 per direction: down·left·right·up)
+//   <char>-idle-anim  → <Char>_idle_anim_16x16.png  24 frames (4 dirs × 6 frames, same layout as run)
+//   <char>-run        → <Char>_run_16x16.png         24 frames (4 dirs × 6 frames)
+//   <char>-phone      → <Char>_phone_16x16.png       9 frames (non-directional cycle)
+//   <char>-sit        → <Char>_sit_16x16.png         24 frames (4 dirs × 6 frames)
+//   <char>-sit2       → <Char>_sit2_16x16.png        24 frames (4 dirs × 6 frames)
+//   <char>-sit3       → <Char>_sit3_16x16.png        12 frames (2 dirs × 6 frames: left/down · right/up)
+//
+// Direction column layout for 6-frame-per-direction sheets:
+//   down (0–5) · left (6–11) · right (12–17) · up (18–23)
 for (const char of _CHAR_NAMES) {
   const n    = char;
   const base = `pixelart/Modern tiles_Free/Characters_free/${n}`;
-  loadSheet(`${n.toLowerCase()}-idle`,      `${base}_16x16.png`,      CHAR_W, CHAR_H);
-  loadSheet(`${n.toLowerCase()}-idle-anim`, `${base}_idle_16x16.png`, CHAR_W, CHAR_H);
-  loadSheet(`${n.toLowerCase()}-run`,       `${base}_run_16x16.png`,  CHAR_W, CHAR_H);
-  loadSheet(`${n.toLowerCase()}-phone`,     `${base}_phone_16x16.png`, CHAR_W, CHAR_H);
-  loadSheet(`${n.toLowerCase()}-sit`,       `${base}_sit_16x16.png`,  CHAR_W, CHAR_H);
+  loadSheet(`${n.toLowerCase()}-idle`,      `${base}_idle_16x16.png`,       CHAR_W, CHAR_H);
+  loadSheet(`${n.toLowerCase()}-idle-anim`, `${base}_idle_anim_16x16.png`,  CHAR_W, CHAR_H);
+  loadSheet(`${n.toLowerCase()}-run`,       `${base}_run_16x16.png`,        CHAR_W, CHAR_H);
+  loadSheet(`${n.toLowerCase()}-phone`,     `${base}_phone_16x16.png`,      CHAR_W, CHAR_H);
+  loadSheet(`${n.toLowerCase()}-sit`,       `${base}_sit_16x16.png`,        CHAR_W, CHAR_H);
+  loadSheet(`${n.toLowerCase()}-sit2`,      `${base}_sit2_16x16.png`,       CHAR_W, CHAR_H);
+  loadSheet(`${n.toLowerCase()}-sit3`,      `${base}_sit3_16x16.png`,       CHAR_W, CHAR_H);
 }
 
 // Preload tile sheets for floor and furniture rendering
