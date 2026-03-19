@@ -140,8 +140,11 @@ function handleMsg(msg: NetMsg, peerId: string): void {
       break;
 
     case 'namechange': {
-      const peer = Array.from(state.peers.values()).find(p => p.playerId === msg.playerId);
-      if (peer) peer.name = msg.name;
+      const peer = state.peers.get(peerId);
+      if (!peer) break;
+      // Optional safety check: ensure the claimed playerId matches the stored one
+      if (msg.playerId !== undefined && msg.playerId !== peer.playerId) break;
+      peer.name = msg.name;
       break;
     }
   }
