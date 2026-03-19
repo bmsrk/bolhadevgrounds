@@ -16,7 +16,7 @@ import { createAnimator, tickAnimator, facingFromVelocity, CHAR_W, CHAR_H } from
 import { joinGameRoom } from './net/room.js';
 import type { RoomHandle } from './net/room.js';
 import { upsertPeer, recordSample, smoothPeers, evictStalePeers } from './net/presence.js';
-import { initOverlay, appendChatMessage } from './ui/overlay.js';
+import { initOverlay, appendChatMessage, showNameConflictToast } from './ui/overlay.js';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -153,6 +153,9 @@ initInput();
 const roomId = getRoomId();
 let roomHandle: RoomHandle | null = null;
 
+/** True once the player has confirmed their name and entered the game. */
+let _nameEntered = false;
+
 function broadcastHello(): void {
   if (!roomHandle) return;
   roomHandle.send({
@@ -171,8 +174,8 @@ function handleMsg(msg: NetMsg, peerId: string): void {
     case 'hello': {
       const isNewPeer = !state.peers.has(peerId);
       upsertPeer(state.peers, peerId, msg.playerId, msg.name, msg.color, msg.character, msg.x, msg.y);
-      // Reply with our own hello only once so the newcomer sees us
-      if (isNewPeer && roomHandle) {
+      // Reply with our own hello only once the name is set and only to newcomers
+      if (isNewPeer && _nameEntered && roomHandle) {
         roomHandle.send({
           type:      'hello',
           playerId:  state.local.id,
@@ -182,6 +185,20 @@ function handleMsg(msg: NetMsg, peerId: string): void {
           color:     state.local.color,
           character: state.local.character,
         }, peerId);
+      }
+      // Race-condition: another peer arrived at the same time with the same name.
+      // The peer whose playerId sorts later loses and gets an auto-suffix.
+      if (
+        _nameEntered &&
+        msg.name.toLowerCase() === state.local.name.toLowerCase() &&
+        msg.playerId !== state.local.id &&
+        state.local.id > msg.playerId
+      ) {
+        const newName = findUniqueName(state.local.name, getTakenNames());
+        state.local.name = newName;
+        saveName(newName);
+        roomHandle?.send({ type: 'namechange', playerId: state.local.id, name: newName });
+        showNameConflictToast(newName);
       }
       break;
     }
@@ -223,40 +240,62 @@ function handleMsg(msg: NetMsg, peerId: string): void {
   }
 }
 
+// Join the room immediately (before name entry) so we can detect taken names.
+// We stay silent (no hello broadcast) until the player confirms their name.
+roomHandle = joinGameRoom(
+  roomId,
+  // onPeerJoin — announce ourselves only after the name has been confirmed
+  (peerId: string) => {
+    if (!_nameEntered || !roomHandle) return;
+    roomHandle.send({
+      type:      'hello',
+      playerId:  state.local.id,
+      name:      state.local.name,
+      x:         state.local.x,
+      y:         state.local.y,
+      color:     state.local.color,
+      character: state.local.character,
+    }, peerId);
+  },
+  // onPeerLeave
+  (peerId: string) => {
+    state.peers.delete(peerId);
+  },
+  handleMsg,
+);
+
+/** Return the lower-cased set of names currently active in the room. */
+function getTakenNames(): Set<string> {
+  const names = new Set<string>();
+  for (const peer of state.peers.values()) {
+    names.add(peer.name.toLowerCase());
+  }
+  return names;
+}
+
+/**
+ * Find the next available unique name by appending " (N)" suffixes until
+ * no existing peer uses the same name (case-insensitive).
+ */
+function findUniqueName(base: string, taken: Set<string>): string {
+  if (!taken.has(base.toLowerCase())) return base;
+  let i = 2;
+  while (taken.has(`${base} (${i})`.toLowerCase())) i++;
+  return `${base} (${i})`;
+}
+
 // ── Overlay / UI ──────────────────────────────────────────────────────────
 
 initOverlay(
   roomId,
   savedName,
+  // getTakenNames — checked before name is accepted
+  getTakenNames,
   // onNameSave
   (name: string) => {
     saveName(name);
     state.local.name = name;
-
-    // Start networking now that the player has a name
-    roomHandle = joinGameRoom(
-      roomId,
-      // onPeerJoin
-      (peerId: string) => {
-        // Announce ourselves to the new peer
-        if (roomHandle) {
-          roomHandle.send({
-            type:      'hello',
-            playerId:  state.local.id,
-            name:      state.local.name,
-            x:         state.local.x,
-            y:         state.local.y,
-            color:     state.local.color,
-            character: state.local.character,
-          }, peerId);
-        }
-      },
-      // onPeerLeave
-      (peerId: string) => {
-        state.peers.delete(peerId);
-      },
-      handleMsg,
-    );
+    _nameEntered = true;
 
     broadcastHello();
   },
