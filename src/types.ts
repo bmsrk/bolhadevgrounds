@@ -1,6 +1,6 @@
 // ─── Animation & character ────────────────────────────────────────────────────
 
-export type AnimState    = 'idle' | 'idle_anim' | 'walk' | 'run' | 'sit' | 'phone';
+export type AnimState    = 'idle' | 'idle_anim' | 'walk' | 'run' | 'sit' | 'sit2' | 'sit3' | 'phone';
 export type Facing       = 'down' | 'left' | 'right' | 'up';
 export type CharacterName = 'Adam' | 'Alex' | 'Amelia' | 'Bob';
 

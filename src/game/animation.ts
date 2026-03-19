@@ -3,14 +3,22 @@
  *
  * Sheet layout (LimeZu "Modern Tiles Free" characters, 16 × 32 px frames):
  *
- *   <Char>_16x16.png      — 1 frame  (full atlas, static idle at srcX=0, srcY=0)
- *   <Char>_idle_16x16.png — 4 frames × 1 row   idle breathing loop
- *   <Char>_run_16x16.png  — 6 frames × 4 directions, laid out HORIZONTALLY in one row:
- *                           down (0–5) · left (6–11) · right (12–17) · up (18–23)
- *   <Char>_phone_16x16.png — frames × 1 row  on-phone animation
- *   <Char>_sit_16x16.png  — frames × 1 row  sitting
+ *   <Char>_16x16.png           — full atlas (unused at runtime)
+ *   <Char>_idle_16x16.png      — 4 frames × 1 row, one frame per direction:
+ *                                 down (0) · left (1) · right (2) · up (3)
+ *   <Char>_idle_anim_16x16.png — 24 frames × 1 row (4 directions × 6 frames):
+ *                                 down (0–5) · left (6–11) · right (12–17) · up (18–23)
+ *   <Char>_run_16x16.png       — 24 frames × 1 row (4 directions × 6 frames):
+ *                                 down (0–5) · left (6–11) · right (12–17) · up (18–23)
+ *   <Char>_phone_16x16.png     — 9 frames × 1 row  on-phone animation (non-directional)
+ *   <Char>_sit_16x16.png       — 24 frames × 1 row (4 directions × 6 frames, same layout as run)
+ *   <Char>_sit2_16x16.png      — 24 frames × 1 row (4 directions × 6 frames)
+ *   <Char>_sit3_16x16.png      — 12 frames × 1 row (2 directions × 6 frames):
+ *                                 left/down (0–5) · right/up (6–11)
  *
- * All sheets are a single 32 px-tall row; directions vary the X offset only.
+ * Direction layout for 6-frame-per-direction sheets:
+ *   srcX = (FACING_COL[facing] + frame) * CHAR_W,  srcY = 0
+ *
  * Character sprite source dimensions: CHAR_W=16 px wide × CHAR_H=32 px tall.
  */
 
@@ -21,7 +29,8 @@ export const CHAR_W = 16;
 export const CHAR_H = 32;
 
 /**
- * Maps facing direction → starting frame column in the run/walk sheet.
+ * Maps facing direction → starting frame column in the 6-frame-per-direction
+ * run/walk/idle_anim/sit/sit2 sheets.
  *
  * All four directions are laid out horizontally in a single 32 px-tall row:
  *   down (frames 0–5) · left (frames 6–11) · right (frames 12–17) · up (frames 18–23)
@@ -29,30 +38,58 @@ export const CHAR_H = 32;
  * Source formula: srcX = (FACING_COL[facing] + frame) * CHAR_W,  srcY = 0
  */
 const FACING_COL: Record<Facing, number> = {
+  down:  0,    // Frame columns 0-5
+  left:  6,    // Frame columns 6-11
+  right: 12,   // Frame columns 12-17
+  up:    18,   // Frame columns 18-23
+};
+
+/**
+ * Maps facing direction → frame index in the idle_16x16 sheet.
+ * That sheet stores exactly one still-idle frame per direction:
+ *   down (0) · left (1) · right (2) · up (3)
+ */
+const FACING_FRAME: Record<Facing, number> = {
   down:  0,
-  left:  6,
-  right: 12,
-  up:    18,
+  left:  1,
+  right: 2,
+  up:    3,
+};
+
+/**
+ * Maps facing direction → starting frame column in sit3_16x16.
+ * sit3 has only 2 direction groups (6 frames each):
+ *   left/down group (0–5) · right/up group (6–11)
+ */
+const SIT3_COL: Record<Facing, number> = {
+  down:  0,
+  left:  0,
+  right: 6,
+  up:    6,
 };
 
 /** Animation playback speed (frames per second) per state. */
 const ANIM_FPS: Record<AnimState, number> = {
-  idle:      0,    // static — never advances
+  idle:      0,    // static — never advances (directional still frame)
   idle_anim: 5,
   walk:      8,
   run:       12,
-  sit:       0,
-  phone:     3,
+  sit:       6,
+  sit2:      6,
+  sit3:      6,
+  phone:     6,
 };
 
-/** Number of animation frames per state. */
+/** Number of animation frames per state (per direction where applicable). */
 const ANIM_FRAMES: Record<AnimState, number> = {
   idle:      1,
-  idle_anim: 4,
+  idle_anim: 6,    // 6 frames per direction (idle_anim_16x16 sheet)
   walk:      6,
   run:       6,
-  sit:       1,
-  phone:     2,
+  sit:       6,    // 6 frames per direction (sit_16x16 sheet)
+  sit2:      6,    // 6 frames per direction (sit2_16x16 sheet)
+  sit3:      6,    // 6 frames per direction (sit3_16x16 has 2 dirs × 6 frames)
+  phone:     9,    // 9-frame full phone cycle (non-directional)
 };
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -120,26 +157,54 @@ export function getFrameSource(
   const c = character.toLowerCase();
   switch (anim.state) {
     case 'idle':
-      return { sheetKey: `${c}-idle`, srcX: 0, srcY: 0 };
+      // idle_16x16 stores one directional frame per direction (down=0 left=1 right=2 up=3).
+      // FACING_FRAME is a complete Record<Facing, number> so the lookup is always defined.
+      return { sheetKey: `${c}-idle`, srcX: (FACING_FRAME[anim.facing] ?? 0) * CHAR_W, srcY: 0 };
 
     case 'idle_anim':
-      return { sheetKey: `${c}-idle-anim`, srcX: anim.frame * CHAR_W, srcY: 0 };
+      // idle_anim_16x16 has 4 directions × 6 frames, same column layout as run.
+      // FACING_COL is a complete Record<Facing, number> so the lookup is always defined.
+      return {
+        sheetKey: `${c}-idle-anim`,
+        srcX: ((FACING_COL[anim.facing] ?? 0) + anim.frame) * CHAR_W,
+        srcY: 0,
+      };
 
     case 'walk':
     case 'run':
       return {
         sheetKey: `${c}-run`,
-        srcX: (FACING_COL[anim.facing]! + anim.frame) * CHAR_W,
+        srcX: ((FACING_COL[anim.facing] ?? 0) + anim.frame) * CHAR_W,
         srcY: 0,    // all directions are in one horizontal row
       };
 
+    case 'sit':
+      return {
+        sheetKey: `${c}-sit`,
+        srcX: ((FACING_COL[anim.facing] ?? 0) + anim.frame) * CHAR_W,
+        srcY: 0,
+      };
+
+    case 'sit2':
+      return {
+        sheetKey: `${c}-sit2`,
+        srcX: ((FACING_COL[anim.facing] ?? 0) + anim.frame) * CHAR_W,
+        srcY: 0,
+      };
+
+    case 'sit3':
+      // sit3 has only 2 direction groups; SIT3_COL maps facing to the right group
+      return {
+        sheetKey: `${c}-sit3`,
+        srcX: ((SIT3_COL[anim.facing] ?? 0) + anim.frame) * CHAR_W,
+        srcY: 0,
+      };
+
     case 'phone':
+      // phone animation is non-directional — cycles through all 9 frames
       return { sheetKey: `${c}-phone`, srcX: anim.frame * CHAR_W, srcY: 0 };
 
-    case 'sit':
-      return { sheetKey: `${c}-sit`, srcX: 0, srcY: 0 };
-
     default:
-      return { sheetKey: `${c}-idle`, srcX: 0, srcY: 0 };
+      return { sheetKey: `${c}-idle`, srcX: (FACING_FRAME[anim.facing] ?? 0) * CHAR_W, srcY: 0 };
   }
 }
