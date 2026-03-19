@@ -5,6 +5,7 @@ import { MAX_CHAT_MESSAGES, CHAT_MAX_LENGTH } from '../constants.js';
 interface OverlayRefs {
   namePanel:    HTMLDivElement;
   nameInput:    HTMLInputElement;
+  nameError:    HTMLParagraphElement;
   nameSaveBtn:  HTMLButtonElement;
   roomInfoBar:  HTMLDivElement;
   roomNameSpan: HTMLSpanElement;
@@ -17,14 +18,16 @@ interface OverlayRefs {
 }
 
 let _refs: OverlayRefs | null = null;
-let _onNameSave:   ((name: string) => void) | null = null;
-let _onChatSubmit: ((text: string) => void) | null = null;
+let _onNameSave:    ((name: string) => void) | null = null;
+let _onChatSubmit:  ((text: string) => void) | null = null;
 let _onTypingChange: ((typing: boolean) => void) | null = null;
+let _getTakenNames: (() => Set<string>) | null = null;
 
 /** Build and inject all overlay HTML into #overlay. */
 export function initOverlay(
   roomId: string,
   savedName: string,
+  getTakenNames: () => Set<string>,
   onNameSave:    (name: string) => void,
   onChatSubmit:  (text: string) => void,
   onTypingChange: (typing: boolean) => void,
@@ -36,6 +39,7 @@ export function initOverlay(
   _onNameSave     = onNameSave;
   _onChatSubmit   = onChatSubmit;
   _onTypingChange = onTypingChange;
+  _getTakenNames  = getTakenNames;
 
   overlay.innerHTML = `
     <style>
@@ -87,6 +91,13 @@ export function initOverlay(
         font-weight: 600;
       }
       #name-save-btn:hover { background: #3a8eef; }
+      #name-error {
+        font-size: 0.8rem;
+        color: #ff6b6b;
+        margin-top: -8px;
+        margin-bottom: 10px;
+        min-height: 1.1em;
+      }
 
       /* ── Room info bar ──────────────────────────────────────────── */
       #room-info-bar {
@@ -207,6 +218,7 @@ export function initOverlay(
       <h2>🚀 Startup Devgrounds</h2>
       <p>Enter your display name to join the office</p>
       <input id="name-input" type="text" maxlength="24" placeholder="Your name…" autocomplete="off" />
+      <p id="name-error"></p>
       <button id="name-save-btn">Save &amp; Enter</button>
     </div>
 
@@ -230,6 +242,7 @@ export function initOverlay(
   _refs = {
     namePanel:    overlay.querySelector('#name-panel')    as HTMLDivElement,
     nameInput:    overlay.querySelector('#name-input')    as HTMLInputElement,
+    nameError:    overlay.querySelector('#name-error')    as HTMLParagraphElement,
     nameSaveBtn:  overlay.querySelector('#name-save-btn') as HTMLButtonElement,
     roomInfoBar:  overlay.querySelector('#room-info-bar') as HTMLDivElement,
     roomNameSpan: overlay.querySelector('#room-name-span') as HTMLSpanElement,
@@ -312,6 +325,15 @@ function saveName(): void {
     _refs.nameInput.focus();
     return;
   }
+  if (_getTakenNames) {
+    const taken = _getTakenNames();
+    if (taken.has(name.toLowerCase())) {
+      _refs.nameError.textContent = `"${name}" is already in use in this room (names are case-insensitive). Choose a different name.`;
+      _refs.nameInput.focus();
+      return;
+    }
+  }
+  _refs.nameError.textContent = '';
   _onNameSave(name);
   _refs.namePanel.style.display   = 'none';
   _refs.roomInfoBar.style.display = '';
@@ -357,4 +379,23 @@ function escapeHtml(str: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+/**
+ * Show a brief toast notification that the player's name was auto-renamed
+ * due to a conflict with another player who joined at the same time.
+ */
+export function showNameConflictToast(newName: string): void {
+  const toast = document.createElement('div');
+  toast.style.cssText = [
+    'position:fixed', 'top:60px', 'left:50%', 'transform:translateX(-50%)',
+    'background:rgba(30,20,10,0.92)', 'border:1px solid rgba(255,180,50,0.5)',
+    'color:#ffcc44', 'border-radius:8px', 'padding:10px 20px',
+    'font-size:0.85rem', 'font-family:Segoe UI,system-ui,sans-serif',
+    'pointer-events:none', 'z-index:9999',
+    'box-shadow:0 4px 16px rgba(0,0,0,0.5)',
+  ].join(';');
+  toast.textContent = `Name taken — you've been renamed to "${newName}"`;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 4000);
 }
