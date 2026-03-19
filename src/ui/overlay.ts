@@ -250,10 +250,45 @@ export function initOverlay(
   _refs.nameSaveBtn.addEventListener('click', saveName);
 
   _refs.copyBtn.addEventListener('click', () => {
-    void navigator.clipboard.writeText(window.location.href);
     const btn = _refs!.copyBtn;
-    btn.textContent = 'Copied!';
-    setTimeout(() => { btn.textContent = 'Copy invite link'; }, 1500);
+    const url = window.location.href;
+
+    const showMessage = (text: string) => {
+      btn.textContent = text;
+      setTimeout(() => { btn.textContent = 'Copy invite link'; }, 1500);
+    };
+
+    const fallbackCopy = () => {
+      const textarea = document.createElement('textarea');
+      textarea.value = url;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'absolute';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+
+      let success = false;
+      try {
+        success = document.execCommand('copy');
+      } catch {
+        success = false;
+      }
+
+      document.body.removeChild(textarea);
+      showMessage(success ? 'Copied!' : 'Copy failed');
+    };
+
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(url)
+        .then(() => {
+          showMessage('Copied!');
+        })
+        .catch(() => {
+          fallbackCopy();
+        });
+    } else {
+      fallbackCopy();
+    }
   });
 
   _refs.chatInput.addEventListener('focus',  () => _onTypingChange?.(true));
