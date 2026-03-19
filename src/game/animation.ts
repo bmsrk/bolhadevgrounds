@@ -5,16 +5,17 @@
  *
  *   <Char>_16x16.png           — full atlas (unused at runtime)
  *   <Char>_idle_16x16.png      — 4 frames × 1 row, one frame per direction:
- *                                 down (0) · left (1) · right (2) · up (3)
+ *                                 right (0) · up (1) · left (2) · down (3)
  *   <Char>_idle_anim_16x16.png — 24 frames × 1 row (4 directions × 6 frames):
- *                                 down (0–5) · left (6–11) · right (12–17) · up (18–23)
+ *                                 right (0–5) · up (6–11) · left (12–17) · down (18–23)
  *   <Char>_run_16x16.png       — 24 frames × 1 row (4 directions × 6 frames):
- *                                 down (0–5) · left (6–11) · right (12–17) · up (18–23)
+ *                                 right (0–5) · up (6–11) · left (12–17) · down (18–23)
  *   <Char>_phone_16x16.png     — 9 frames × 1 row  on-phone animation (non-directional)
- *   <Char>_sit_16x16.png       — 24 frames × 1 row (4 directions × 6 frames, same layout as run)
+ *   <Char>_sit_16x16.png       — 24 frames × 1 row (4 directions × 6 frames):
+ *                                 right (0–5) · up (6–11) · left (12–17) · down (18–23)
  *   <Char>_sit2_16x16.png      — 24 frames × 1 row (4 directions × 6 frames)
  *   <Char>_sit3_16x16.png      — 12 frames × 1 row (2 directions × 6 frames):
- *                                 left/down (0–5) · right/up (6–11)
+ *                                 right/up (0–5) · left/down (6–11)
  *
  * Direction layout for 6-frame-per-direction sheets:
  *   srcX = (FACING_COL[facing] + frame) * CHAR_W,  srcY = 0
@@ -33,39 +34,39 @@ export const CHAR_H = 32;
  * run/walk/idle_anim/sit/sit2 sheets.
  *
  * All four directions are laid out horizontally in a single 32 px-tall row:
- *   down (frames 0–5) · left (frames 6–11) · right (frames 12–17) · up (frames 18–23)
+ *   right (frames 0–5) · up (frames 6–11) · left (frames 12–17) · down (frames 18–23)
  *
  * Source formula: srcX = (FACING_COL[facing] + frame) * CHAR_W,  srcY = 0
  */
 const FACING_COL: Record<Facing, number> = {
-  down:  0,    // Frame columns 0-5
-  left:  6,    // Frame columns 6-11
-  right: 12,   // Frame columns 12-17
-  up:    18,   // Frame columns 18-23
+  right: 0,    // Frame columns 0-5
+  up:    6,    // Frame columns 6-11
+  left:  12,   // Frame columns 12-17
+  down:  18,   // Frame columns 18-23
 };
 
 /**
  * Maps facing direction → frame index in the idle_16x16 sheet.
  * That sheet stores exactly one still-idle frame per direction:
- *   down (0) · left (1) · right (2) · up (3)
+ *   right (0) · up (1) · left (2) · down (3)
  */
 const FACING_FRAME: Record<Facing, number> = {
-  down:  0,
-  left:  1,
-  right: 2,
-  up:    3,
+  right: 0,
+  up:    1,
+  left:  2,
+  down:  3,
 };
 
 /**
  * Maps facing direction → starting frame column in sit3_16x16.
  * sit3 has only 2 direction groups (6 frames each):
- *   left/down group (0–5) · right/up group (6–11)
+ *   right/up group (0–5) · left/down group (6–11)
  */
 const SIT3_COL: Record<Facing, number> = {
-  down:  0,
-  left:  0,
-  right: 6,
-  up:    6,
+  right: 0,
+  up:    0,
+  left:  6,
+  down:  6,
 };
 
 /** Animation playback speed (frames per second) per state. */
