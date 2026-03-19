@@ -111,17 +111,17 @@ export const GAME_MAP: GameMap = {
   ],
 
   // ── Furniture shapes (visual only, no collision) ────────────────────────
+  // Pixel-art tile IDs reference Interiors_free_16x16.png (16 cols × 89 rows).
+  // id = sheetRow * 16 + sheetCol.  Tile 136 = dark monitor screen (row 8 col 8).
+  // Tile 152 = darker filled screen (row 9 col 8).  Tile 648 = light panel (row 40 col 8).
   furniture: [
-    // Open workspace monitors – vary by row and column
-    ...[60, 130, 200].flatMap((y, rowIdx) => {
-      return [42, 162, 282].map((x, colIdx) => {
-        const sprite =
-          rowIdx === 2 && colIdx === 2 ? 'monitor-idle' :
-          rowIdx === 1               ? 'monitor-line'  :
-                                       'monitor-bar';
-        return { type: 'rect' as const, x, y: y + 8, w: 30, h: 22, color: '#1a3a6a', sprite };
-      });
-    }),
+    // Open workspace monitors – pixel-art screen tile on each desk
+    ...[60, 130, 200].flatMap(y =>
+      [42, 162, 282].map(x => ({
+        type: 'rect' as const, x, y: y + 8, w: 30, h: 22, color: '#1a3a6a',
+        tileSprite: { sheet: 'interiors', tileId: 136 },
+      }))
+    ),
 
     // Conference table top
     { type: 'rect', x: 462, y: 82, w: 176, h: 96, color: '#2a5070', label: '📋 Meeting' },
@@ -140,21 +140,24 @@ export const GAME_MAP: GameMap = {
     { type: 'circle', x: 648, y: 110, r: 10, color: '#1e3a50' },
     { type: 'circle', x: 648, y: 140, r: 10, color: '#1e3a50' },
 
-    // Engineering monitors – line/trend charts (purple theme)
+    // Engineering monitors – pixel-art screen tile (purple desk theme)
     ...[50, 140].flatMap(y =>
       [740, 840, 940, 1040].map(x => ({
-        type: 'rect' as const, x: x + 2, y: y + 6, w: 36, h: 26, color: '#2a1a4a', sprite: 'monitor-line',
+        type: 'rect' as const, x: x + 2, y: y + 6, w: 36, h: 26, color: '#2a1a4a',
+        tileSprite: { sheet: 'interiors', tileId: 136 },
       }))
     ),
 
-    // Design monitors – color-palette + wireframe (red theme)
+    // Design monitors – pixel-art screen tile (red desk theme)
     ...[740, 840, 940, 1040].map(x => ({
-      type: 'rect' as const, x: x + 2, y: 386, w: 36, h: 26, color: '#4a1a2a', sprite: 'monitor-design',
+      type: 'rect' as const, x: x + 2, y: 386, w: 36, h: 26, color: '#4a1a2a',
+      tileSprite: { sheet: 'interiors', tileId: 136 },
     })),
 
-    // Product area monitors – KPI metrics + trend (orange theme)
+    // Product area monitors – pixel-art screen tile (orange desk theme)
     ...[300, 420, 540].map(x => ({
-      type: 'rect' as const, x: x + 2, y: 386, w: 36, h: 26, color: '#3a2008', sprite: 'monitor-product',
+      type: 'rect' as const, x: x + 2, y: 386, w: 36, h: 26, color: '#3a2008',
+      tileSprite: { sheet: 'interiors', tileId: 136 },
     })),
 
     // Lounge sofa detail
@@ -163,11 +166,13 @@ export const GAME_MAP: GameMap = {
     // Coffee table
     { type: 'rect', x: 160, y: 420, w: 60, h: 40, color: '#3a2a08', label: '☕' },
 
-    // Whiteboard (engineering area) – network architecture graph
-    { type: 'rect', x: 725, y: 260, w: 120, h: 50, color: '#f0f0ff', label: '📝 Board', sprite: 'whiteboard-graph' },
+    // Whiteboard (engineering area) – pixel-art light panel tile
+    { type: 'rect', x: 725, y: 260, w: 120, h: 50, color: '#f0f0ff', label: '📝 Board',
+      tileSprite: { sheet: 'interiors', tileId: 648 } },
 
-    // Lounge wall screen (video call)
-    { type: 'rect', x: 55, y: 592, w: 90, h: 55, color: '#0a0a1a', sprite: 'monitor-video' },
+    // Lounge wall screen (video call) – pixel-art filled-screen tile
+    { type: 'rect', x: 55, y: 592, w: 90, h: 55, color: '#0a0a1a',
+      tileSprite: { sheet: 'interiors', tileId: 152 } },
 
     // Plant dots
     { type: 'circle', x: 390, y: 40,  r: 12, color: '#1a5a1a' },

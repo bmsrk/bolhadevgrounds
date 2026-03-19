@@ -50,6 +50,40 @@ export function loadTileSheet(
 }
 
 /**
+ * Draw a single tile from a loaded tile sheet at the given destination rect.
+ *
+ * @param ctx    - Canvas 2D context
+ * @param sheet  - Sheet key as passed to loadTileSheet
+ * @param tileId - Row-major tile ID: `sheetRow * sheetCols + sheetCol` (0-based)
+ * @param dx     - Destination X on canvas
+ * @param dy     - Destination Y on canvas
+ * @param dw     - Destination width  (scales the tile to this size)
+ * @param dh     - Destination height (scales the tile to this size)
+ *
+ * @returns true if drawn; false if the sheet isn't ready yet.
+ */
+export function drawTile(
+  ctx:    CanvasRenderingContext2D,
+  sheet:  string,
+  tileId: number,
+  dx:     number,
+  dy:     number,
+  dw:     number,
+  dh:     number,
+): boolean {
+  const s = _getSheet(sheet);
+  if (!s) return false;
+  const srcCol = tileId % s.sheetCols;
+  const srcRow = Math.floor(tileId / s.sheetCols);
+  ctx.drawImage(
+    s.img,
+    srcCol * s.tileW, srcRow * s.tileH, s.tileW, s.tileH,
+    dx, dy, dw, dh,
+  );
+  return true;
+}
+
+/**
  * Draw one tile layer.
  * Must be called inside a `ctx.save()` / `ctx.restore()` block that already
  * has the world-space translate applied.

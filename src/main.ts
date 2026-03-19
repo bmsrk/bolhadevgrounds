@@ -10,7 +10,7 @@ import { startLoop } from './game/loop.js';
 import { initInput, getInput } from './game/input.js';
 import { movePlayer } from './game/physics.js';
 import { render, resizeCanvas } from './game/render.js';
-import { preloadSprites, loadSheet } from './game/sprites.js';
+import { loadSheet } from './game/sprites.js';
 import { loadTileSheet } from './game/tilemap.js';
 import { createAnimator, tickAnimator, facingFromVelocity, CHAR_W, CHAR_H } from './game/animation.js';
 import { joinGameRoom } from './net/room.js';
@@ -107,31 +107,29 @@ window.addEventListener('resize', () => resizeCanvas(canvas));
 
 // ── Sprite pre-loading ────────────────────────────────────────────────────
 
-preloadSprites([
-  'monitor-bar',
-  'monitor-line',
-  'monitor-design',
-  'monitor-product',
-  'whiteboard-graph',
-  'monitor-video',
-  'monitor-idle',
-]);
-
 // Preload pixel-art character sprite sheets (16 × 32 px frames)
+// idle-anim uses the 4-frame directional idle sheet (_idle_16x16.png).
+// run uses a single-row sheet with all 4 directions laid out horizontally:
+//   down (0-5) · left (6-11) · right (12-17) · up (18-23)
 for (const char of _CHAR_NAMES) {
   const n    = char;
   const base = `pixelart/Modern tiles_Free/Characters_free/${n}`;
-  loadSheet(`${n.toLowerCase()}-idle`,      `${base}_16x16.png`,           CHAR_W, CHAR_H);
-  loadSheet(`${n.toLowerCase()}-idle-anim`, `${base}_idle_anim_16x16.png`, CHAR_W, CHAR_H);
-  loadSheet(`${n.toLowerCase()}-run`,       `${base}_run_16x16.png`,       CHAR_W, CHAR_H);
-  loadSheet(`${n.toLowerCase()}-phone`,     `${base}_phone_16x16.png`,     CHAR_W, CHAR_H);
-  loadSheet(`${n.toLowerCase()}-sit`,       `${base}_sit_16x16.png`,       CHAR_W, CHAR_H);
+  loadSheet(`${n.toLowerCase()}-idle`,      `${base}_16x16.png`,      CHAR_W, CHAR_H);
+  loadSheet(`${n.toLowerCase()}-idle-anim`, `${base}_idle_16x16.png`, CHAR_W, CHAR_H);
+  loadSheet(`${n.toLowerCase()}-run`,       `${base}_run_16x16.png`,  CHAR_W, CHAR_H);
+  loadSheet(`${n.toLowerCase()}-phone`,     `${base}_phone_16x16.png`, CHAR_W, CHAR_H);
+  loadSheet(`${n.toLowerCase()}-sit`,       `${base}_sit_16x16.png`,  CHAR_W, CHAR_H);
 }
 
-// Preload interior tile sheet for floor rendering
+// Preload tile sheets for floor and furniture rendering
 loadTileSheet(
   'room-builder',
   'pixelart/Modern tiles_Free/Interiors_free/16x16/Room_Builder_free_16x16.png',
+  16, 16,
+);
+loadTileSheet(
+  'interiors',
+  'pixelart/Modern tiles_Free/Interiors_free/16x16/Interiors_free_16x16.png',
   16, 16,
 );
 

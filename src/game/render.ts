@@ -2,7 +2,7 @@ import type { GameState, CharacterName, Animator } from '../types.js';
 import type { GameMap } from '../types.js';
 import { PLAYER_RADIUS } from '../constants.js';
 import { getSprite, drawSheetFrame } from './sprites.js';
-import { drawTileLayer } from './tilemap.js';
+import { drawTileLayer, drawTile } from './tilemap.js';
 import { getFrameSource, CHAR_W, CHAR_H } from './animation.js';
 
 const LABEL_FONT   = '11px "Segoe UI", system-ui, sans-serif';
@@ -52,6 +52,7 @@ export function render(
   const offY = Math.round((H - map.worldHeight) / 2);
 
   ctx.clearRect(0, 0, W, H);
+  ctx.imageSmoothingEnabled = false;   // keep pixel-art tiles crisp
 
   ctx.save();
   ctx.translate(offX, offY);
@@ -92,18 +93,24 @@ export function render(
     ctx.lineWidth   = 1;
 
     if (item.type === 'rect' && item.w !== undefined && item.h !== undefined) {
-      const img = item.sprite ? getSprite(item.sprite) : undefined;
-      if (img) {
-        ctx.drawImage(img, item.x, item.y, item.w, item.h);
-      } else {
-        ctx.fillRect(item.x, item.y, item.w, item.h);
-        ctx.strokeRect(item.x, item.y, item.w, item.h);
-        if (item.label) {
-          ctx.font         = LABEL_FONT;
-          ctx.fillStyle    = 'rgba(255,255,255,0.6)';
-          ctx.textAlign    = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(item.label, item.x + item.w / 2, item.y + item.h / 2);
+      let drawn = false;
+      if (item.tileSprite) {
+        drawn = drawTile(ctx, item.tileSprite.sheet, item.tileSprite.tileId, item.x, item.y, item.w, item.h);
+      }
+      if (!drawn) {
+        const img = item.sprite ? getSprite(item.sprite) : undefined;
+        if (img) {
+          ctx.drawImage(img, item.x, item.y, item.w, item.h);
+        } else {
+          ctx.fillRect(item.x, item.y, item.w, item.h);
+          ctx.strokeRect(item.x, item.y, item.w, item.h);
+          if (item.label) {
+            ctx.font         = LABEL_FONT;
+            ctx.fillStyle    = 'rgba(255,255,255,0.6)';
+            ctx.textAlign    = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(item.label, item.x + item.w / 2, item.y + item.h / 2);
+          }
         }
       }
     } else if (item.type === 'circle' && item.r !== undefined) {
