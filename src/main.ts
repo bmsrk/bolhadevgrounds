@@ -5,7 +5,7 @@
 
 import { WORLD_WIDTH, WORLD_HEIGHT, PLAYER_COLORS, SEND_HZ, MAX_CHAT_MESSAGES } from './constants.js';
 import type { GameState, LocalPlayer, NetMsg, ChatEntry, CharacterName, CharacterVariant, Facing } from './types.js';
-import { GAME_MAP, INTERACTIVE_OBJECTS } from './game/map.js';
+import { GAME_MAP, INTERACTIVE_OBJECTS, generateGameMap } from './game/map.js';
 import { startLoop } from './game/loop.js';
 import { initInput, getInput } from './game/input.js';
 import { movePlayer } from './game/physics.js';
@@ -72,6 +72,15 @@ function saveVariant(variant: CharacterVariant): void {
 function getRoomId(): string {
   const params = new URLSearchParams(window.location.search);
   return params.get('room') ?? 'lobby';
+}
+
+/** Read optional ?seed= query parameter for deterministic map generation. */
+function getMapSeed(): number | undefined {
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get('seed');
+  if (raw === null) return undefined;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 function newUUID(): string {
@@ -154,6 +163,13 @@ loadTileSheet(
   'pixelart/Modern tiles_Free/Interiors_free/16x16/Interiors_free_16x16.png',
   16, 16,
 );
+
+// ── Map generation ────────────────────────────────────────────────────────
+
+// Use ?seed= query param for deterministic map; fall back to the module-level
+// GAME_MAP (seed 0) so existing behaviour is unchanged when no seed is given.
+const mapSeed = getMapSeed();
+const activeMap = mapSeed !== undefined ? generateGameMap(mapSeed) : GAME_MAP;
 
 // ── Input ─────────────────────────────────────────────────────────────────
 
@@ -382,7 +398,7 @@ startLoop((dt: number) => {
   // ── Movement ───────────────────────────────────────────────────────────
   let facingDir: Facing | null = null;
   if (!state.isTyping) {
-    const moved = movePlayer(state.local, input, GAME_MAP.colliders, dt);
+    const moved = movePlayer(state.local, input, activeMap.colliders, dt);
     if (moved) {
       const dx = (input.right ? 1 : 0) - (input.left ? 1 : 0);
       const dy = (input.down  ? 1 : 0) - (input.up   ? 1 : 0);
@@ -404,7 +420,7 @@ startLoop((dt: number) => {
   }
 
   // ── Zone detection (show flash on enter) ─────────────────────────────
-  const curZone = GAME_MAP.zones.find(z =>
+  const curZone = activeMap.zones.find(z =>
     state.local.x >= z.x && state.local.x < z.x + z.w &&
     state.local.y >= z.y && state.local.y < z.y + z.h,
   );
@@ -457,7 +473,7 @@ startLoop((dt: number) => {
   smoothPeers(state.peers, dt);
 
   // ── Render ────────────────────────────────────────────────────────────
-  render(canvas, ctx, state, GAME_MAP);
+  render(canvas, ctx, state, activeMap);
 });
 
 // ── Cleanup on unload ─────────────────────────────────────────────────────
