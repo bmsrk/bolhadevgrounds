@@ -1,4 +1,4 @@
-import type { NetMsg, CharacterName, AnimState, Facing } from '../types.js';
+import type { NetMsg, CharacterName, CharacterVariant, AnimState, Facing } from '../types.js';
 
 export type SendFn = (msg: NetMsg, peerId?: string) => void;
 export type RecvFn = (msg: NetMsg, peerId: string) => void;
@@ -34,7 +34,10 @@ export function decodeMsg(raw: unknown): NetMsg | null {
         const CHARS: readonly string[] = ['Adam', 'Alex', 'Amelia', 'Bob'];
         const character = (CHARS.includes(obj['character'] as string)
           ? obj['character'] : 'Adam') as CharacterName;
-        return { type: 'hello', playerId: obj['playerId'], name: obj['name'], x: obj['x'], y: obj['y'], color: obj['color'], character };
+        const rawVariant = Number(obj['variant']);
+        const variant: CharacterVariant = (rawVariant >= 1 && rawVariant <= 6)
+          ? (rawVariant as CharacterVariant) : 1;
+        return { type: 'hello', playerId: obj['playerId'], name: obj['name'], x: obj['x'], y: obj['y'], color: obj['color'], character, variant };
       }
       break;
     case 'state':

@@ -1,4 +1,4 @@
-import type { GameState, ChatEntry } from '../types.js';
+import type { GameState, ChatEntry, CharacterName, CharacterVariant } from '../types.js';
 import { MAX_CHAT_MESSAGES, CHAT_MAX_LENGTH } from '../constants.js';
 
 /** DOM references held by the overlay module. */
@@ -17,29 +17,71 @@ interface OverlayRefs {
   debugBtn:     HTMLButtonElement;
 }
 
+const CHAR_NAMES: readonly CharacterName[]   = ['Adam', 'Alex', 'Amelia', 'Bob'];
+const CHAR_LABELS: Record<CharacterName, string> = {
+  Adam:   'Adam',
+  Alex:   'Alex',
+  Amelia: 'Amelia',
+  Bob:    'Bob',
+};
+const VARIANT_HUE: Record<CharacterVariant, number> = {
+  1: 0, 2: 60, 3: 120, 4: 180, 5: 240, 6: 300,
+};
+/** Base path for character idle sprites (used as thumbnails). */
+const CHAR_BASE = 'pixelart/Modern tiles_Free/Characters_free';
+
 let _refs: OverlayRefs | null = null;
-let _onNameSave:    ((name: string) => void) | null = null;
-let _onChatSubmit:  ((text: string) => void) | null = null;
-let _onTypingChange: ((typing: boolean) => void) | null = null;
-let _getTakenNames: (() => Set<string>) | null = null;
+let _onNameSave:        ((name: string) => void) | null = null;
+let _onChatSubmit:      ((text: string) => void) | null = null;
+let _onTypingChange:    ((typing: boolean) => void) | null = null;
+let _getTakenNames:     (() => Set<string>) | null = null;
+let _onCharacterSelect: ((char: CharacterName, variant: CharacterVariant) => void) | null = null;
+
+let _selectedChar:    CharacterName    = 'Adam';
+let _selectedVariant: CharacterVariant = 1;
 
 /** Build and inject all overlay HTML into #overlay. */
 export function initOverlay(
-  roomId: string,
-  savedName: string,
-  getTakenNames: () => Set<string>,
-  onNameSave:    (name: string) => void,
-  onChatSubmit:  (text: string) => void,
-  onTypingChange: (typing: boolean) => void,
-  onDebugToggle:  () => void,
+  roomId:            string,
+  savedName:         string,
+  savedChar:         CharacterName,
+  savedVariant:      CharacterVariant,
+  getTakenNames:     () => Set<string>,
+  onCharacterSelect: (char: CharacterName, variant: CharacterVariant) => void,
+  onNameSave:        (name: string) => void,
+  onChatSubmit:      (text: string) => void,
+  onTypingChange:    (typing: boolean) => void,
+  onDebugToggle:     () => void,
 ): void {
   const overlay = document.getElementById('overlay');
   if (!overlay) throw new Error('#overlay element not found');
 
-  _onNameSave     = onNameSave;
-  _onChatSubmit   = onChatSubmit;
-  _onTypingChange = onTypingChange;
-  _getTakenNames  = getTakenNames;
+  _onNameSave        = onNameSave;
+  _onChatSubmit      = onChatSubmit;
+  _onTypingChange    = onTypingChange;
+  _getTakenNames     = getTakenNames;
+  _onCharacterSelect = onCharacterSelect;
+  _selectedChar      = savedChar;
+  _selectedVariant   = savedVariant;
+
+  // Build character card HTML for each char × variant
+  const charCardsHtml = CHAR_NAMES.map(char => {
+    const spritePath = `${CHAR_BASE}/${char}_idle_16x16.png`;
+    // "down" facing is frame index 3 in the idle sheet (srcX = 3×16 = 48px)
+    // Display at 3× = 48×96px.  Sheet is 64×32 source → 192×96 at 3×.
+    return `
+      <button class="char-card${char === savedChar ? ' active' : ''}" data-char="${char}" title="${CHAR_LABELS[char]}">
+        <span class="char-thumb" style="background-image:url('/${spritePath}')"></span>
+        <span class="char-card-name">${CHAR_LABELS[char]}</span>
+      </button>`;
+  }).join('');
+
+  const variantBtnsHtml = ([1, 2, 3, 4, 5, 6] as CharacterVariant[]).map(v => {
+    const hue = VARIANT_HUE[v];
+    return `<button class="variant-btn${v === savedVariant ? ' active' : ''}" data-variant="${v}" title="Variant ${v}">
+      <span class="variant-dot" style="filter:hue-rotate(${hue}deg)"></span>
+    </button>`;
+  }).join('');
 
   overlay.innerHTML = `
     <style>
@@ -48,11 +90,12 @@ export function initOverlay(
         position: absolute;
         top: 50%; left: 50%;
         transform: translate(-50%, -50%);
-        background: rgba(20,20,40,0.95);
+        background: rgba(20,20,40,0.97);
         border: 1px solid rgba(74,158,255,0.4);
         border-radius: 12px;
-        padding: 28px 32px;
-        min-width: 280px;
+        padding: 24px 28px;
+        width: 360px;
+        max-width: calc(100vw - 32px);
         pointer-events: auto;
         text-align: center;
         box-shadow: 0 8px 32px rgba(0,0,0,0.6);
@@ -60,12 +103,103 @@ export function initOverlay(
       #name-panel h2 {
         font-size: 1.3rem;
         color: #4a9eff;
-        margin-bottom: 6px;
+        margin-bottom: 4px;
       }
-      #name-panel p {
+      #name-panel > p {
         font-size: 0.82rem;
         color: #888;
+        margin-bottom: 14px;
+      }
+
+      /* ── Character selector ─────────────────────────────────────── */
+      .selector-section-label {
+        font-size: 0.75rem;
+        color: #7090c0;
+        text-align: left;
+        margin-bottom: 6px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      #char-grid {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin-bottom: 14px;
+      }
+      .char-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(74,158,255,0.2);
+        border-radius: 8px;
+        padding: 8px 6px 6px;
+        cursor: pointer;
+        transition: border-color 0.15s, background 0.15s;
+        width: 72px;
+      }
+      .char-card:hover { border-color: rgba(74,158,255,0.55); background: rgba(74,158,255,0.08); }
+      .char-card.active { border-color: #4a9eff; background: rgba(74,158,255,0.15); }
+      .char-thumb {
+        display: block;
+        width: 48px;
+        height: 96px;
+        /* sprite sheet: 4 frames × 16px wide, 32px tall → 3× = 192×96 */
+        background-size: 192px 96px;
+        /* "down" = frame 3, srcX=48 → at 3× offset = 144px */
+        background-position: -144px 0;
+        background-repeat: no-repeat;
+        image-rendering: pixelated;
+      }
+      .char-card.active .char-thumb { filter: var(--char-thumb-filter, none); }
+      .char-card-name {
+        font-size: 0.7rem;
+        color: #ccc;
+        font-family: "Segoe UI", system-ui, sans-serif;
+      }
+      .char-card.active .char-card-name { color: #4a9eff; font-weight: 700; }
+
+      /* ── Variant row ────────────────────────────────────────────── */
+      #variant-grid {
+        display: flex;
+        gap: 7px;
+        justify-content: center;
         margin-bottom: 16px;
+      }
+      .variant-btn {
+        background: rgba(255,255,255,0.04);
+        border: 1.5px solid rgba(74,158,255,0.2);
+        border-radius: 50%;
+        width: 34px;
+        height: 34px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: border-color 0.15s, background 0.15s;
+        padding: 0;
+      }
+      .variant-btn:hover { border-color: rgba(74,158,255,0.5); background: rgba(74,158,255,0.1); }
+      .variant-btn.active { border-color: #4a9eff; background: rgba(74,158,255,0.18); }
+      .variant-dot {
+        display: block;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: url('/pixelart/Modern tiles_Free/Characters_free/Adam_idle_16x16.png') -144px 0 / 192px 96px no-repeat;
+        image-rendering: pixelated;
+      }
+
+      /* ── Name input ─────────────────────────────────────────────── */
+      .name-input-label {
+        font-size: 0.75rem;
+        color: #7090c0;
+        text-align: left;
+        margin-bottom: 6px;
+        margin-top: 4px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
       }
       #name-input {
         width: 100%;
@@ -75,8 +209,9 @@ export function initOverlay(
         background: rgba(255,255,255,0.07);
         color: #e0e0e0;
         font-size: 1rem;
-        margin-bottom: 12px;
+        margin-bottom: 10px;
         outline: none;
+        box-sizing: border-box;
       }
       #name-input:focus { border-color: #4a9eff; }
       #name-save-btn {
@@ -94,9 +229,10 @@ export function initOverlay(
       #name-error {
         font-size: 0.8rem;
         color: #ff6b6b;
-        margin-top: -8px;
+        margin-top: -6px;
         margin-bottom: 10px;
         min-height: 1.1em;
+        text-align: left;
       }
 
       /* ── Room info bar ──────────────────────────────────────────── */
@@ -216,7 +352,15 @@ export function initOverlay(
 
     <div id="name-panel">
       <h2>🚀 Startup Devgrounds</h2>
-      <p>Enter your display name to join the office</p>
+      <p>Choose your character and display name to join the office</p>
+
+      <p class="selector-section-label">Character</p>
+      <div id="char-grid">${charCardsHtml}</div>
+
+      <p class="selector-section-label">Color variant</p>
+      <div id="variant-grid">${variantBtnsHtml}</div>
+
+      <p class="name-input-label">Your display name</p>
       <input id="name-input" type="text" maxlength="24" placeholder="Your name…" autocomplete="off" />
       <p id="name-error"></p>
       <button id="name-save-btn">Save &amp; Enter</button>
@@ -257,10 +401,39 @@ export function initOverlay(
   // Pre-fill saved name
   if (savedName) _refs.nameInput.value = savedName;
 
-  _refs.nameInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') saveName();
+  // Apply saved variant filter to the active char card on load
+  _applyVariantFilter(_selectedChar, _selectedVariant);
+
+  // Character card clicks
+  overlay.querySelectorAll<HTMLButtonElement>('.char-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const char = card.dataset['char'] as CharacterName;
+      if (!char) return;
+      _selectedChar = char;
+      overlay.querySelectorAll('.char-card').forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+      _applyVariantFilter(_selectedChar, _selectedVariant);
+      _onCharacterSelect?.(_selectedChar, _selectedVariant);
+    });
   });
-  _refs.nameSaveBtn.addEventListener('click', saveName);
+
+  // Variant button clicks
+  overlay.querySelectorAll<HTMLButtonElement>('.variant-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const v = Number(btn.dataset['variant']) as CharacterVariant;
+      if (v < 1 || v > 6) return;
+      _selectedVariant = v;
+      overlay.querySelectorAll('.variant-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _applyVariantFilter(_selectedChar, _selectedVariant);
+      _onCharacterSelect?.(_selectedChar, _selectedVariant);
+    });
+  });
+
+  _refs.nameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') saveNameEntry();
+  });
+  _refs.nameSaveBtn.addEventListener('click', saveNameEntry);
 
   _refs.copyBtn.addEventListener('click', () => {
     const btn = _refs!.copyBtn;
@@ -318,7 +491,34 @@ export function initOverlay(
   _refs.roomNameSpan.textContent = roomId;
 }
 
-function saveName(): void {
+/**
+ * Update the CSS filter on the active char card thumbnail to preview the
+ * selected color variant, and update all variant dot backgrounds.
+ */
+function _applyVariantFilter(char: CharacterName, variant: CharacterVariant): void {
+  const hue = VARIANT_HUE[variant];
+  const filter = hue === 0 ? 'none' : `hue-rotate(${hue}deg)`;
+
+  // Update all char card thumbs: inactive cards show original, active shows tinted
+  document.querySelectorAll<HTMLElement>('.char-card').forEach(card => {
+    const thumb = card.querySelector<HTMLElement>('.char-thumb');
+    if (!thumb) return;
+    const isActive = card.classList.contains('active');
+    thumb.style.filter = isActive ? filter : 'none';
+  });
+
+  // Update variant dot backgrounds to show current char with each hue
+  const spritePath = `${CHAR_BASE}/${char}_idle_16x16.png`;
+  document.querySelectorAll<HTMLElement>('.variant-dot').forEach(dot => {
+    dot.style.backgroundImage = `url('/${spritePath}')`;
+    const btn = dot.closest<HTMLButtonElement>('.variant-btn');
+    const v = Number(btn?.dataset['variant']) as CharacterVariant;
+    const dotHue = VARIANT_HUE[v] ?? 0;
+    dot.style.filter = dotHue === 0 ? 'none' : `hue-rotate(${dotHue}deg)`;
+  });
+}
+
+function saveNameEntry(): void {
   if (!_refs || !_onNameSave) return;
   const name = _refs.nameInput.value.trim();
   if (!name) {
