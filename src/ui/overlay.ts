@@ -1,5 +1,6 @@
 import type { GameState, ChatEntry, CharacterName, CharacterVariant } from '../types.js';
 import { MAX_CHAT_MESSAGES, CHAT_MAX_LENGTH } from '../constants.js';
+import { ASSET_BASE } from '../game/sprites.js';
 
 /** DOM references held by the overlay module. */
 interface OverlayRefs {
@@ -71,7 +72,7 @@ export function initOverlay(
     // Display at 3× = 48×96px.  Sheet is 64×32 source → 192×96 at 3×.
     return `
       <button class="char-card${char === savedChar ? ' active' : ''}" data-char="${char}" title="${CHAR_LABELS[char]}">
-        <span class="char-thumb" style="background-image:url('/${spritePath}')"></span>
+        <span class="char-thumb" style="background-image:url('${ASSET_BASE}${spritePath}')"></span>
         <span class="char-card-name">${CHAR_LABELS[char]}</span>
       </button>`;
   }).join('');
@@ -187,7 +188,7 @@ export function initOverlay(
         width: 18px;
         height: 18px;
         border-radius: 50%;
-        background: url('/pixelart/Modern tiles_Free/Characters_free/Adam_idle_16x16.png') -144px 0 / 192px 96px no-repeat;
+        background: url('${ASSET_BASE}pixelart/Modern tiles_Free/Characters_free/Adam_idle_16x16.png') -144px 0 / 192px 96px no-repeat;
         image-rendering: pixelated;
       }
 
@@ -510,7 +511,7 @@ function _applyVariantFilter(char: CharacterName, variant: CharacterVariant): vo
   // Update variant dot backgrounds to show current char with each hue
   const spritePath = `${CHAR_BASE}/${char}_idle_16x16.png`;
   document.querySelectorAll<HTMLElement>('.variant-dot').forEach(dot => {
-    dot.style.backgroundImage = `url('/${spritePath}')`;
+    dot.style.backgroundImage = `url('${ASSET_BASE}${spritePath}')`;
     const btn = dot.closest<HTMLButtonElement>('.variant-btn');
     const v = Number(btn?.dataset['variant']) as CharacterVariant;
     const dotHue = VARIANT_HUE[v] ?? 0;
