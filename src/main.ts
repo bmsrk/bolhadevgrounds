@@ -420,11 +420,11 @@ startLoop((dt: number) => {
     if (state.zoneFlash.alpha <= 0) state.zoneFlash = null;
   }
 
-  // ── Ambient dust motes (Lounge zone) ─────────────────────────────────
+  // ── Ambient dust motes (Lounge zone, new layout: x = 16-288, y = 336-704) ──
   if (Math.random() < dt * 5) {
     state.particles.push({
-      x:       20  + Math.random() * 240,
-      y:       320 + Math.random() * 380,
+      x:       22  + Math.random() * 252,
+      y:       360 + Math.random() * 336,
       vx:      (Math.random() - 0.5) * 8,
       vy:      -(4 + Math.random() * 10),
       alpha:   0.3 + Math.random() * 0.3,
