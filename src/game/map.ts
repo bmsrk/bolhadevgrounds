@@ -1,5 +1,6 @@
 import type { GameMap, TileLayer, InteractiveObject } from '../types.js';
 import { WORLD_WIDTH, WORLD_HEIGHT } from '../constants.js';
+import { generateMap } from './room-generator.js';
 
 // ── Tile sheet constants ──────────────────────────────────────────────────────
 // World: 1280 × 720 = 80 × 45 tiles at 16 px/tile.
@@ -229,12 +230,14 @@ export const INTERACTIVE_OBJECTS: readonly InteractiveObject[] = [
 const _iT = (tileId: number) => ({ sheet: 'interiors' as const, tileId });
 
 /**
- * Completely revamped static map for "Startup Devgrounds".
+ * Static fallback map for "Startup Devgrounds".
  *
  * Layout: 6 rooms in a 2-row × 3-column grid separated by a central corridor.
  * All room boundaries are proper wall tiles with 4-tile (64 px) doorway openings.
+ *
+ * @deprecated Prefer `generateGameMap()` for the procedurally generated version.
  */
-export const GAME_MAP: GameMap = {
+export const STATIC_GAME_MAP: GameMap = {
   worldWidth:  WORLD_WIDTH,
   worldHeight: WORLD_HEIGHT,
 
@@ -517,3 +520,21 @@ export const GAME_MAP: GameMap = {
 
   tiles: [_floorLayer, _wallLayer],
 };
+
+/**
+ * Generate a procedural GameMap.
+ * @param seed - Optional deterministic seed. The same seed always produces
+ *               the same map layout. If omitted, seed 0 is used.
+ */
+export function generateGameMap(seed?: number): GameMap {
+  return generateMap(seed ?? 0);
+}
+
+/**
+ * The active game map — procedurally generated with a fixed seed so the
+ * default layout is stable. Existing imports of `GAME_MAP` continue to work
+ * without changes.
+ *
+ * To obtain a static fallback use `STATIC_GAME_MAP`.
+ */
+export const GAME_MAP: GameMap = generateGameMap(0);
