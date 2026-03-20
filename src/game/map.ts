@@ -119,6 +119,37 @@ function stoneFloor(c: number, r: number): number {
     : [TILE_STONE_D, TILE_STONE_E, TILE_STONE_F])[x] ?? TILE_STONE_A;
 }
 
+// ── Room interior border helper ───────────────────────────────────────────────
+// Returns true for the 1-tile perimeter ring inside each zone's floor area.
+function isRoomBorder(col: number, row: number): boolean {
+  // Top zones (rows _TR1–_TR2 = 1–16)
+  if (row >= _TR1 && row <= _TR2) {
+    const onTopBot = row === _TR1 || row === _TR2;
+    if (col >= 1        && col <= _WC1 - 1)         return onTopBot || col === 1        || col === _WC1 - 1;
+    if (col >= _WC1 + 1 && col <= _WC2 - 1)         return onTopBot || col === _WC1 + 1 || col === _WC2 - 1;
+    if (col >= _WC2 + 1 && col <= _TILE_COLS - 2)   return onTopBot || col === _WC2 + 1 || col === _TILE_COLS - 2;
+  }
+  // Bottom zones (rows _BR1–_BR2 = 21–43)
+  if (row >= _BR1 && row <= _BR2) {
+    const onTopBot = row === _BR1 || row === _BR2;
+    if (col >= 1        && col <= _WC1 - 1)         return onTopBot || col === 1        || col === _WC1 - 1;
+    if (col >= _WC1 + 1 && col <= _WC2 - 1)         return onTopBot || col === _WC1 + 1 || col === _WC2 - 1;
+    if (col >= _WC2 + 1 && col <= _TILE_COLS - 2)   return onTopBot || col === _WC2 + 1 || col === _TILE_COLS - 2;
+  }
+  return false;
+}
+
+// ── Special floor feature bounds (derived from zone/door layout constants) ────
+// Lounge centre rug — centred within the Lounge zone (col 1–17, row 21–43)
+const _RUG_C1 = 6, _RUG_C2 = 12;   // cols 6–12  (centred on col 9, 7 tiles wide)
+const _RUG_R1 = 28, _RUG_R2 = 36;  // rows 28–36 (centred on row 32, 9 tiles tall)
+// Meeting carpet — centred under conference table (Meeting zone: col 19–44, row 1–16)
+const _CARPET_C1 = 24, _CARPET_C2 = 40;  // cols 24–40 (within _WC1+1 to _WC2-1)
+const _CARPET_R1 = 5,  _CARPET_R2 = 12;  // rows 5–12  (centred vertically in top zone)
+// Reception mat — OW door-facing strip (_DH_L1/_DH_L2 = cols 7–10, just inside corridor wall)
+const _MAT_C1 = _DH_L1, _MAT_C2 = _DH_L2;  // cols 7–10 (aligns with OW corridor doorway)
+const _MAT_R1 = 15, _MAT_R2 = 16;           // rows 15–16 (2 tiles before corridor wall at row 17)
+
 // ── Floor tile layer (z = 0) ──────────────────────────────────────────────────
 const _floorLayer: TileLayer = {
   sheet:   'room-builder',
@@ -133,6 +164,42 @@ const _floorLayer: TileLayer = {
     // Outer border — skip (world background shows through)
     if (col === 0 || col === _TILE_COLS - 1 || row === 0 || row === _TILE_ROWS - 1) return -1;
 
+    // ── Special floor features (checked before base zone patterns) ──────────
+
+    // Lounge centre rug — warm beige/tan accent on wood floor
+    if (col >= _RUG_C1 && col <= _RUG_C2 && row >= _RUG_R1 && row <= _RUG_R2) {
+      const onRugEdge = col === _RUG_C1 || col === _RUG_C2 || row === _RUG_R1 || row === _RUG_R2;
+      return onRugEdge
+        ? ([TILE_TAN_A, TILE_TAN_B, TILE_TAN_C][col % 3] ?? TILE_TAN_A)
+        : ([TILE_BEIGE_A, TILE_BEIGE_B, TILE_BEIGE_C][col % 3] ?? TILE_BEIGE_A);
+    }
+
+    // Meeting carpet — contrasting beige underlay for conference table area
+    if (col >= _CARPET_C1 && col <= _CARPET_C2 && row >= _CARPET_R1 && row <= _CARPET_R2) {
+      return ([TILE_BEIGE_A, TILE_BEIGE_B, TILE_BEIGE_C][col % 3] ?? TILE_BEIGE_A);
+    }
+
+    // Reception mat — OW entrance strip facing the corridor door
+    if (col >= _MAT_C1 && col <= _MAT_C2 && row >= _MAT_R1 && row <= _MAT_R2) {
+      return TILE_OFFICE_D;
+    }
+
+    // ── Room interior borders — 1-tile perimeter ring (darker shade) ─────────
+    if (isRoomBorder(col, row)) {
+      if (row <= _WR1) {
+        // Top zones
+        if (col <= _WC1 - 1) return [TILE_OFFICE_D, TILE_OFFICE_E, TILE_OFFICE_F][col % 3] ?? TILE_OFFICE_D;
+        if (col <= _WC2 - 1) return [TILE_TAN_A,    TILE_TAN_B,    TILE_TAN_C   ][col % 3] ?? TILE_TAN_A;
+        return                       [TILE_TEAL_D,   TILE_TEAL_E,   TILE_TEAL_F  ][col % 3] ?? TILE_TEAL_D;
+      } else {
+        // Bottom zones
+        if (col <= _WC1 - 1) return [TILE_DKWOOD_A, TILE_DKWOOD_B, TILE_DKWOOD_C][col % 3] ?? TILE_DKWOOD_A;
+        if (col <= _WC2 - 1) return [TILE_TAN_A,    TILE_TAN_B,    TILE_TAN_C   ][col % 3] ?? TILE_TAN_A;
+        return                       [TILE_STONE_D,  TILE_STONE_E,  TILE_STONE_F ][col % 3] ?? TILE_STONE_D;
+      }
+    }
+
+    // ── Base floor patterns ───────────────────────────────────────────────────
     // Per-column floor picker for top zones (OW / Meeting / Engineering)
     const topFloor = (c: number, r: number) =>
       c <= _WC1 ? officeFloor(c, r) : c < _WC2 ? tanFloor(c, r) : tealFloor(c, r);

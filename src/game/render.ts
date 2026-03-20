@@ -1,8 +1,9 @@
-import type { GameState, CharacterName, CharacterVariant, Animator } from '../types.js';
+import type { GameState, CharacterName, CharacterVariant, Animator, FurnitureShape } from '../types.js';
 import type { GameMap } from '../types.js';
 import { PLAYER_RADIUS } from '../constants.js';
 import { drawSheetFrame } from './sprites.js';
 import { getFrameSource, CHAR_W, CHAR_H } from './animation.js';
+import { drawTileLayer, drawTile } from './tilemap.js';
 
 const LABEL_FONT   = '11px "Segoe UI", system-ui, sans-serif';
 const NAME_FONT    = '12px "Segoe UI", system-ui, sans-serif';
@@ -91,6 +92,30 @@ export function render(
   ctx.fillStyle = vgr;
   ctx.fillRect(0, 0, map.worldWidth, map.worldHeight);
   ctx.restore();
+
+  // ── Floor tile layers (z < 1, drawn beneath zone colour overlays) ─────────
+  const sortedTileLayers = [...map.tiles].sort((a, b) => a.z - b.z);
+  for (const layer of sortedTileLayers) {
+    if (layer.z < 1) drawTileLayer(ctx, layer);
+  }
+
+  // ── Zone colour overlays (subtle tint per room) ───────────────────────────
+  for (const zone of map.zones) {
+    ctx.save();
+    ctx.fillStyle = zone.color;
+    ctx.fillRect(zone.x, zone.y, zone.w, zone.h);
+    ctx.restore();
+  }
+
+  // ── Wall / overlay tile layers (z >= 1, drawn above zone tint) ────────────
+  for (const layer of sortedTileLayers) {
+    if (layer.z >= 1) drawTileLayer(ctx, layer);
+  }
+
+  // ── Furniture shapes ──────────────────────────────────────────────────────
+  for (const f of map.furniture) {
+    drawFurniture(ctx, f);
+  }
 
   // ── Debug: collider outlines ───────────────────────────────────────────────
   if (state.debugColliders) {
@@ -249,5 +274,41 @@ function drawPlayer(
   ctx.shadowBlur   = 4;
   ctx.fillStyle    = isLocal ? '#ffffff' : '#e0e0e0';
   ctx.fillText(name, x, dy - 3);
+  ctx.restore();
+}
+
+function drawFurniture(ctx: CanvasRenderingContext2D, f: FurnitureShape): void {
+  ctx.save();
+  if (f.type === 'rect') {
+    const w = f.w ?? 16;
+    const h = f.h ?? 16;
+    if (f.tileSprite) {
+      // Scale the tile sprite to fill the furniture rect.
+      // Falls back to the solid colour rect while the sheet is still loading.
+      const drawn = drawTile(ctx, f.tileSprite.sheet, f.tileSprite.tileId, f.x, f.y, w, h);
+      if (!drawn) {
+        ctx.fillStyle = f.color;
+        ctx.fillRect(f.x, f.y, w, h);
+      }
+    } else {
+      ctx.fillStyle = f.color;
+      ctx.fillRect(f.x, f.y, w, h);
+    }
+    if (f.label) {
+      ctx.font         = LABEL_FONT;
+      ctx.fillStyle    = 'rgba(255,255,255,0.70)';
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor  = '#000';
+      ctx.shadowBlur   = 3;
+      ctx.fillText(f.label, f.x + w / 2, f.y + h / 2);
+    }
+  } else {
+    const r = f.r ?? 8;
+    ctx.fillStyle = f.color;
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.restore();
 }

@@ -187,6 +187,44 @@ function fillFloorForTheme(col: number, row: number, theme: FloorTheme): number 
   return tiles[idx % tiles.length]!.tileId;
 }
 
+/**
+ * Paint a 1-tile-wide perimeter border inside a room's floor rect using the
+ * "flipped row parity" trick — flipping r+1 ensures the border always uses the
+ * alternate shade of the same theme, creating a visible frame without needing
+ * a separate dark-theme lookup.
+ */
+function fillFloorBorder(
+  data: number[],
+  x: number, y: number, w: number, h: number,
+  theme: FloorTheme,
+): void {
+  for (let r = y; r < y + h; r++) {
+    for (let c = x; c < x + w; c++) {
+      if (c < 0 || c >= MAP_COLS || r < 0 || r >= MAP_ROWS) continue;
+      if (c === x || c === x + w - 1 || r === y || r === y + h - 1) {
+        // Pass r + 1 to flip row parity: fillFloorForTheme alternates shades on
+        // even/odd rows, so incrementing r guarantees the border always uses the
+        // opposite shade from its adjacent interior tile, creating a visible frame.
+        data[r * MAP_COLS + c] = fillFloorForTheme(c, r + 1, theme);
+      }
+    }
+  }
+}
+
+/** Fill an arbitrary rect with a flat floor theme (used for carpets and rugs). */
+function fillFloorRect(
+  data: number[],
+  x: number, y: number, w: number, h: number,
+  theme: FloorTheme,
+): void {
+  for (let r = y; r < y + h; r++) {
+    for (let c = x; c < x + w; c++) {
+      if (c < 0 || c >= MAP_COLS || r < 0 || r >= MAP_ROWS) continue;
+      data[r * MAP_COLS + c] = fillFloorForTheme(c, r, theme);
+    }
+  }
+}
+
 // ── Furniture tile ID helpers (matching map.ts _iT ids exactly) ───────────────
 
 function iT(tileId: number): { sheet: 'interiors'; tileId: number } {
@@ -664,6 +702,34 @@ export function generateMap(seed = 0, templates: RoomTemplate[] = DEFAULT_TEMPLA
       if (c < 0 || c >= MAP_COLS || r < 0 || r >= MAP_ROWS) continue;
       floorData[r * MAP_COLS + c] = corridorFloor(c, r);
     }
+  }
+
+  // ── Room interior border rings (1-tile perimeter, alternate shade) ─────────
+  fillFloorBorder(floorData, col0X, row0Y, c0W, r0H, tmpl[0]!.floorTheme);
+  fillFloorBorder(floorData, col1X, row0Y, c1W, r0H, tmpl[1]!.floorTheme);
+  fillFloorBorder(floorData, col2X, row0Y, c2W, r0H, tmpl[2]!.floorTheme);
+  fillFloorBorder(floorData, col0X, row1Y, c0W, r1H, tmpl[3]!.floorTheme);
+  fillFloorBorder(floorData, col1X, row1Y, c1W, r1H, tmpl[4]!.floorTheme);
+  fillFloorBorder(floorData, col2X, row1Y, c2W, r1H, tmpl[5]!.floorTheme);
+
+  // ── Lounge centre rug — warm beige/tan accent on wood floor ───────────────
+  if (tmpl[3]!.purpose === 'lounge' && c0W > 8 && r1H > 10) {
+    const rugX = col0X + Math.floor(c0W * 0.28);
+    const rugY = row1Y + Math.floor(r1H * 0.30);
+    const rugW = Math.max(4, Math.floor(c0W * 0.50));
+    const rugH = Math.max(4, Math.floor(r1H * 0.38));
+    fillFloorRect(floorData, rugX, rugY, rugW, rugH, 'beige');
+    fillFloorBorder(floorData, rugX, rugY, rugW, rugH, 'tan');
+  }
+
+  // ── Meeting room carpet — contrasting underlay beneath conference table ────
+  if (tmpl[1]!.purpose === 'meeting' && c1W > 8 && r0H > 6) {
+    const carpetX = col1X + Math.floor(c1W * 0.22);
+    const carpetY = row0Y + Math.floor(r0H * 0.22);
+    const carpetW = Math.max(4, Math.floor(c1W * 0.56));
+    const carpetH = Math.max(3, Math.floor(r0H * 0.54));
+    fillFloorRect(floorData, carpetX, carpetY, carpetW, carpetH, 'beige');
+    fillFloorBorder(floorData, carpetX, carpetY, carpetW, carpetH, 'tan');
   }
 
   // ── Outer border walls ────────────────────────────────────────────────────
