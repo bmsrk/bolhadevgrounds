@@ -816,7 +816,7 @@ export function generateMap(seed = 0, templates: RoomTemplate[] = DEFAULT_TEMPLA
     worldWidth:  WORLD_WIDTH,
     worldHeight: WORLD_HEIGHT,
     zones,
-    colliders:   allColliders,
+    colliders:   [],
     furniture:   allFurniture,
     tiles:       [floorLayer, wallLayer],
   };
