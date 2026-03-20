@@ -37,6 +37,28 @@ const TILE_TAN_C     = rbTile(8,  2);   // 138 — warm tan floor C
 const TILE_WOOD_A    = rbTile(11, 0);   // 187 — medium-brown wood A
 const TILE_WOOD_B    = rbTile(11, 1);   // 188 — medium-brown wood B
 const TILE_WOOD_C    = rbTile(11, 2);   // 189 — medium-brown wood C
+const TILE_DKWOOD_A  = rbTile(12, 0);   // 204 — darker brown wood A
+const TILE_DKWOOD_B  = rbTile(12, 1);   // 205 — darker brown wood B
+const TILE_DKWOOD_C  = rbTile(12, 2);   // 206 — darker brown wood C
+
+// Cool teal floor (rows 9–10)
+const TILE_TEAL_A    = rbTile(9,  0);   // 153 — teal A
+const TILE_TEAL_B    = rbTile(9,  1);   // 154 — teal B
+const TILE_TEAL_C    = rbTile(9,  2);   // 155 — teal C
+const TILE_TEAL_D    = rbTile(10, 0);   // 170 — dark teal A
+const TILE_TEAL_E    = rbTile(10, 1);   // 171 — dark teal B
+const TILE_TEAL_F    = rbTile(10, 2);   // 172 — dark teal C
+
+// Warm neutral / stone floor (rows 19–20)
+const TILE_STONE_A   = rbTile(19, 0);   // 323 — warm neutral A
+const TILE_STONE_B   = rbTile(19, 1);   // 324 — warm neutral B
+const TILE_STONE_C   = rbTile(19, 2);   // 325 — warm neutral C
+const TILE_STONE_D   = rbTile(20, 0);   // 340 — stone A
+const TILE_STONE_E   = rbTile(20, 1);   // 341 — stone B
+const TILE_STONE_F   = rbTile(20, 2);   // 342 — stone C
+
+// Glass-partition wall tile (Room_Builder row 0, col 7 — medium gray #c1c1c8)
+const TILE_PARTITION = rbTile(0, 7);    //   7 — partition wall
 
 /** Return a repeating 3×2 tile pattern index for (col, row) in world tiles. */
 function officeFloor(col: number, row: number): number {
@@ -57,8 +79,26 @@ function woodFloor(col: number, row: number): number {
   const x = col % 3;
   const y = row % 2;
   return y === 0
-    ? ([TILE_TAN_A,  TILE_TAN_B,  TILE_TAN_C ][x] ?? TILE_TAN_A)
-    : ([TILE_WOOD_A, TILE_WOOD_B, TILE_WOOD_C][x] ?? TILE_WOOD_A);
+    ? ([TILE_WOOD_A,   TILE_WOOD_B,   TILE_WOOD_C  ][x] ?? TILE_WOOD_A)
+    : ([TILE_DKWOOD_A, TILE_DKWOOD_B, TILE_DKWOOD_C][x] ?? TILE_DKWOOD_A);
+}
+
+/** Cool teal floor for the Engineering zone. */
+function tealFloor(col: number, row: number): number {
+  const x = col % 3;
+  const y = row % 2;
+  return y === 0
+    ? ([TILE_TEAL_A, TILE_TEAL_B, TILE_TEAL_C][x] ?? TILE_TEAL_A)
+    : ([TILE_TEAL_D, TILE_TEAL_E, TILE_TEAL_F][x] ?? TILE_TEAL_D);
+}
+
+/** Warm stone / neutral floor for the Design Studio and Product Area zones. */
+function stoneFloor(col: number, row: number): number {
+  const x = col % 3;
+  const y = row % 2;
+  return y === 0
+    ? ([TILE_STONE_A, TILE_STONE_B, TILE_STONE_C][x] ?? TILE_STONE_A)
+    : ([TILE_STONE_D, TILE_STONE_E, TILE_STONE_F][x] ?? TILE_STONE_D);
 }
 
 // ── Zone boundaries in tile coords ───────────────────────────────────────────
@@ -90,16 +130,64 @@ const _floorLayer: TileLayer = {
     if (col >= _ZM.x1 && col <= _ZM.x2 && row >= _ZM.y1 && row <= _ZM.y2)
       return beigeFloor(col, row);
 
-    // Corridor between floor halves (row 19) — neutral tile
+    // Engineering — cool teal floor
+    if (col >= _ZE.x1 && col <= _ZE.x2 && row >= _ZE.y1 && row <= _ZE.y2)
+      return tealFloor(col, row);
+
+    // Design Studio — warm stone / neutral floor
+    if (col >= _ZD.x1 && col <= _ZD.x2 && row >= _ZD.y1 && row <= _ZD.y2)
+      return stoneFloor(col, row);
+
+    // Product Area — warm beige floor
+    if (col >= _ZP.x1 && col <= _ZP.x2 && row >= _ZP.y1 && row <= _ZP.y2)
+      return beigeFloor(col, row);
+
+    // Corridor between floor halves (row 19) — neutral office tile
     if (row === 19) return officeFloor(col, row);
 
-    // Default: cool blue-gray office tiles for all other zones
+    // Default: cool blue-gray office tiles (Open Workspace + borders)
     return officeFloor(col, row);
   }),
   offsetX: 0,
   offsetY: 0,
   z:       0,
   alpha:   0.55,
+};
+
+// ── Wall / partition overlay tile layer (z = 1) ───────────────────────────────
+// Draws glass-partition tiles at zone boundaries, rendered above zone colour
+// fills.  Positions align with the physics colliders already in place.
+//
+// Partition columns (tile coords):
+//   col 26  — meeting-room left wall  (pixel x ≈ 416)
+//   col 44  — meeting-room right / engineering-left wall  (pixel x ≈ 704)
+//   col 17  — lounge-right / product-area-left wall       (pixel x ≈ 272)
+//
+// Rows start at 2 (skip outer-wall band + entry gap) and end at 16 (upper half)
+// or 43 (lower half).
+const _wallLayer: TileLayer = {
+  sheet:   'room-builder',
+  mapCols: _TILE_COLS,
+  mapRows: _TILE_ROWS,
+  tileW:   16,
+  tileH:   16,
+  data: Array.from({ length: _TILE_COLS * _TILE_ROWS }, (_, i) => {
+    const col = i % _TILE_COLS;
+    const row = Math.floor(i / _TILE_COLS);
+
+    // Meeting-room left glass partition
+    if (col === 26 && row >= 2 && row <= 16) return TILE_PARTITION;
+    // Meeting-room right / engineering-left glass partition
+    if (col === 44 && row >= 2 && row <= 16) return TILE_PARTITION;
+    // Lounge-right / product-area-left glass partition
+    if (col === 17 && row >= 20 && row <= 43) return TILE_PARTITION;
+
+    return -1;
+  }),
+  offsetX: 0,
+  offsetY: 0,
+  z:       1,
+  alpha:   1.0,
 };
 
 // ── Interactive proximity objects ─────────────────────────────────────────────
@@ -217,11 +305,13 @@ export const GAME_MAP: GameMap = {
     ...[60, 130, 200].flatMap(y =>
       [40, 160, 280].map(x => ({
         type: 'rect' as const, x, y, w: 80, h: 38, color: '#1c2a3a',
+        tileSprite: { sheet: 'interiors', tileId: 161 },
       }))
     ),
 
     // ── Conference table & chairs ──────────────────────────────────────
-    { type: 'rect', x: 462, y: 82, w: 176, h: 96, color: '#1a3a50', label: '📋 Meeting' },
+    { type: 'rect', x: 462, y: 82, w: 176, h: 96, color: '#1a3a50', label: '📋 Meeting',
+      tileSprite: { sheet: 'interiors', tileId: 161 } },
     // North chairs
     { type: 'circle', x: 480, y: 76,  r: 10, color: '#1e3a50' },
     { type: 'circle', x: 520, y: 76,  r: 10, color: '#1e3a50' },
@@ -249,6 +339,7 @@ export const GAME_MAP: GameMap = {
     ...[50, 140].flatMap(y =>
       [740, 840, 940, 1040].map(x => ({
         type: 'rect' as const, x, y, w: 80, h: 38, color: '#1a1030',
+        tileSprite: { sheet: 'interiors', tileId: 128 },
       }))
     ),
     // Engineering whiteboards
@@ -265,6 +356,7 @@ export const GAME_MAP: GameMap = {
     // Desk surfaces
     ...[740, 840, 940, 1040].map(x => ({
       type: 'rect' as const, x, y: 380, w: 80, h: 38, color: '#2e0e16',
+      tileSprite: { sheet: 'interiors', tileId: 161 },
     })),
     // Design Studio big screen (for design reviews)
     { type: 'rect', x: 1100, y: 380, w: 150, h: 90, color: '#1a0010',
@@ -278,6 +370,7 @@ export const GAME_MAP: GameMap = {
     // Desk surfaces
     ...[300, 400, 500, 600].map(x => ({
       type: 'rect' as const, x, y: 380, w: 80, h: 38, color: '#20140a',
+      tileSprite: { sheet: 'interiors', tileId: 161 },
     })),
     // Product backlog board
     { type: 'rect', x: 285, y: 460, w: 120, h: 70, color: '#3a2800', label: '📋 Backlog',
@@ -285,27 +378,41 @@ export const GAME_MAP: GameMap = {
 
     // ── Lounge ────────────────────────────────────────────────────────
     // Sofas
-    { type: 'rect', x: 42,  y: 382, w: 96, h: 46, color: '#5a4820', label: '🛋️ Sofa' },
-    { type: 'rect', x: 42,  y: 502, w: 96, h: 46, color: '#5a4820' },
+    { type: 'rect', x: 42,  y: 382, w: 96, h: 46, color: '#5a4820', label: '🛋️ Sofa',
+      tileSprite: { sheet: 'interiors', tileId: 177 } },
+    { type: 'rect', x: 42,  y: 502, w: 96, h: 46, color: '#5a4820',
+      tileSprite: { sheet: 'interiors', tileId: 177 } },
     // Coffee table
-    { type: 'rect', x: 158, y: 425, w: 70, h: 50, color: '#3a2a08', label: '☕' },
+    { type: 'rect', x: 158, y: 425, w: 70, h: 50, color: '#3a2a08', label: '☕',
+      tileSprite: { sheet: 'interiors', tileId: 161 } },
     // Lounge wall screen (video call)
     { type: 'rect', x: 42, y: 595, w: 100, h: 60, color: '#0a0a1a', label: '📺 TV',
       tileSprite: { sheet: 'interiors', tileId: 152 } },
 
     // ── Game room (lounge corner) ──────────────────────────────────────
-    { type: 'rect', x: 157, y: 482, w: 88, h: 56, color: '#2a1a40', label: '🏓 Games' },
+    { type: 'rect', x: 157, y: 482, w: 88, h: 56, color: '#2a1a40', label: '🏓 Games',
+      tileSprite: { sheet: 'interiors', tileId: 176 } },
 
-    // ── Plants / greenery (corners and partitions) ─────────────────────
-    { type: 'circle', x: 390,  y: 40,  r: 14, color: '#1a6a1a' },
-    { type: 'circle', x: 390,  y: 290, r: 12, color: '#1a5a1a' },
-    { type: 'circle', x: 1250, y: 40,  r: 14, color: '#1a6a1a' },
-    { type: 'circle', x: 1250, y: 690, r: 14, color: '#1a6a1a' },
-    { type: 'circle', x: 40,   y: 690, r: 14, color: '#1a6a1a' },
-    { type: 'circle', x: 715,  y: 310, r: 11, color: '#1a5a1a' },
-    { type: 'circle', x: 715,  y: 690, r: 11, color: '#1a5a1a' },
-    { type: 'circle', x: 270,  y: 310, r: 11, color: '#1a5a1a' },
+    // ── Plants / greenery — pixel-art tile sprites ─────────────────────
+    // Large plants (28 × 28 canvas px, Interiors tile id 16 — bright green)
+    { type: 'rect', x: 376, y:  26, w: 28, h: 28, color: '#1a6a1a',
+      tileSprite: { sheet: 'interiors', tileId: 16 } },
+    { type: 'rect', x: 376, y: 276, w: 28, h: 28, color: '#1a6a1a',
+      tileSprite: { sheet: 'interiors', tileId: 16 } },
+    { type: 'rect', x: 1236, y:  26, w: 28, h: 28, color: '#1a6a1a',
+      tileSprite: { sheet: 'interiors', tileId: 16 } },
+    { type: 'rect', x: 1236, y: 676, w: 28, h: 28, color: '#1a6a1a',
+      tileSprite: { sheet: 'interiors', tileId: 16 } },
+    { type: 'rect', x:  26,  y: 676, w: 28, h: 28, color: '#1a6a1a',
+      tileSprite: { sheet: 'interiors', tileId: 16 } },
+    // Medium plants (22 × 22 canvas px, Interiors tile id 1 — medium green)
+    { type: 'rect', x: 704, y: 299, w: 22, h: 22, color: '#1a5a1a',
+      tileSprite: { sheet: 'interiors', tileId: 1 } },
+    { type: 'rect', x: 704, y: 679, w: 22, h: 22, color: '#1a5a1a',
+      tileSprite: { sheet: 'interiors', tileId: 1 } },
+    { type: 'rect', x: 259, y: 299, w: 22, h: 22, color: '#1a5a1a',
+      tileSprite: { sheet: 'interiors', tileId: 1 } },
   ],
 
-  tiles: [_floorLayer],
+  tiles: [_floorLayer, _wallLayer],
 };
