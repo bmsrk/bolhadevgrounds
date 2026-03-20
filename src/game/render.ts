@@ -1,13 +1,11 @@
 import type { GameState, CharacterName, CharacterVariant, Animator } from '../types.js';
 import type { GameMap } from '../types.js';
 import { PLAYER_RADIUS } from '../constants.js';
-import { getSprite, drawSheetFrame } from './sprites.js';
-import { drawTileLayer, drawTile } from './tilemap.js';
+import { drawSheetFrame } from './sprites.js';
 import { getFrameSource, CHAR_W, CHAR_H } from './animation.js';
 
 const LABEL_FONT   = '11px "Segoe UI", system-ui, sans-serif';
 const NAME_FONT    = '12px "Segoe UI", system-ui, sans-serif';
-const ZONE_FONT    = 'bold 13px "Segoe UI", system-ui, sans-serif';
 const HUD_FONT     = 'bold 16px "Segoe UI", system-ui, sans-serif';
 const TOOLTIP_FONT = '12px "Segoe UI", system-ui, sans-serif';
 
@@ -68,69 +66,31 @@ export function render(
   ctx.translate(offX, offY);
 
   // ── World background ──────────────────────────────────────────────────────
-  ctx.fillStyle = '#0f0f1e';
+  ctx.fillStyle = '#080810';
   ctx.fillRect(0, 0, map.worldWidth, map.worldHeight);
 
-  // ── Floor tile layers (z = 0, below zones) ────────────────────────────────
-  for (const layer of map.tiles) {
-    if (layer.z === 0) drawTileLayer(ctx, layer);
-  }
-
-  // ── Zones ─────────────────────────────────────────────────────────────────
-  for (const zone of map.zones) {
-    ctx.fillStyle = zone.color;
-    ctx.fillRect(zone.x, zone.y, zone.w, zone.h);
-
-    ctx.save();
-    ctx.font          = ZONE_FONT;
-    ctx.fillStyle     = 'rgba(255,255,255,0.35)';
-    ctx.textAlign     = 'center';
-    ctx.textBaseline  = 'middle';
-    ctx.fillText(zone.label, zone.x + zone.w / 2, zone.y + zone.h / 2);
-    ctx.restore();
-  }
-
-  // ── Overlay tile layers (z = 1, above zones) ──────────────────────────────
-  for (const layer of map.tiles) {
-    if (layer.z === 1) drawTileLayer(ctx, layer);
-  }
-
-  // ── Furniture ─────────────────────────────────────────────────────────────
-  for (const item of map.furniture) {
-    ctx.save();
-    ctx.fillStyle   = item.color;
-    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-    ctx.lineWidth   = 1;
-
-    if (item.type === 'rect' && item.w !== undefined && item.h !== undefined) {
-      let drawn = false;
-      if (item.tileSprite) {
-        drawn = drawTile(ctx, item.tileSprite.sheet, item.tileSprite.tileId, item.x, item.y, item.w, item.h);
-      }
-      if (!drawn) {
-        const img = item.sprite ? getSprite(item.sprite) : undefined;
-        if (img) {
-          ctx.drawImage(img, item.x, item.y, item.w, item.h);
-        } else {
-          ctx.fillRect(item.x, item.y, item.w, item.h);
-          ctx.strokeRect(item.x, item.y, item.w, item.h);
-          if (item.label) {
-            ctx.font         = LABEL_FONT;
-            ctx.fillStyle    = 'rgba(255,255,255,0.6)';
-            ctx.textAlign    = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(item.label, item.x + item.w / 2, item.y + item.h / 2);
-          }
-        }
-      }
-    } else if (item.type === 'circle' && item.r !== undefined) {
-      ctx.beginPath();
-      ctx.arc(item.x, item.y, item.r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
+  // ── Subtle dot-grid texture ───────────────────────────────────────────────
+  const GRID = 24;
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.045)';
+  for (let gy = GRID; gy < map.worldHeight; gy += GRID) {
+    for (let gx = GRID; gx < map.worldWidth; gx += GRID) {
+      ctx.fillRect(gx, gy, 1, 1);
     }
-    ctx.restore();
   }
+  ctx.restore();
+
+  // ── Radial vignette (edges darker than centre) ────────────────────────────
+  ctx.save();
+  const vgr = ctx.createRadialGradient(
+    map.worldWidth / 2, map.worldHeight / 2, map.worldWidth * 0.2,
+    map.worldWidth / 2, map.worldHeight / 2, map.worldWidth * 0.75,
+  );
+  vgr.addColorStop(0, 'rgba(0,0,0,0)');
+  vgr.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = vgr;
+  ctx.fillRect(0, 0, map.worldWidth, map.worldHeight);
+  ctx.restore();
 
   // ── Debug: collider outlines ───────────────────────────────────────────────
   if (state.debugColliders) {
