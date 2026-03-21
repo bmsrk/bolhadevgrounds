@@ -52,6 +52,10 @@ export interface RoomTemplate {
   zoneColor: string;
   /** Furniture density: 0.0 = empty, 1.0 = packed */
   furnitureDensity: number;
+  /** Hand-placed furniture added after procedural generation */
+  furnitureOverrides?: import('../types.js').FurnitureShape[];
+  /** Per-cell tile overrides applied after procedural generation (tile-grid coords) */
+  tileOverrides?: { col: number; row: number; tileId: number }[];
 }
 
 export interface GeneratedRoom {
@@ -87,7 +91,7 @@ export const DEFAULT_TEMPLATES: RoomTemplate[] = [
     minWidth: 16, maxWidth: 20,
     minHeight: 14, maxHeight: 18,
     doorEdges: ['south', 'east'],
-    zoneColor: 'rgba(52,152,219,0.10)',
+    zoneColor: 'rgba(52,152,219,0.05)',
     furnitureDensity: 0.7,
   },
   {
@@ -97,7 +101,7 @@ export const DEFAULT_TEMPLATES: RoomTemplate[] = [
     minWidth: 22, maxWidth: 28,
     minHeight: 14, maxHeight: 18,
     doorEdges: ['south', 'east', 'west'],
-    zoneColor: 'rgba(46,204,113,0.10)',
+    zoneColor: 'rgba(46,204,113,0.05)',
     furnitureDensity: 0.6,
   },
   {
@@ -107,7 +111,7 @@ export const DEFAULT_TEMPLATES: RoomTemplate[] = [
     minWidth: 30, maxWidth: 34,
     minHeight: 14, maxHeight: 18,
     doorEdges: ['south', 'west'],
-    zoneColor: 'rgba(155,89,182,0.10)',
+    zoneColor: 'rgba(155,89,182,0.05)',
     furnitureDensity: 0.7,
   },
   {
@@ -117,7 +121,7 @@ export const DEFAULT_TEMPLATES: RoomTemplate[] = [
     minWidth: 16, maxWidth: 20,
     minHeight: 20, maxHeight: 26,
     doorEdges: ['north', 'east'],
-    zoneColor: 'rgba(241,196,15,0.10)',
+    zoneColor: 'rgba(241,196,15,0.05)',
     furnitureDensity: 0.6,
   },
   {
@@ -127,7 +131,7 @@ export const DEFAULT_TEMPLATES: RoomTemplate[] = [
     minWidth: 22, maxWidth: 28,
     minHeight: 20, maxHeight: 26,
     doorEdges: ['north', 'east', 'west'],
-    zoneColor: 'rgba(230,126,34,0.10)',
+    zoneColor: 'rgba(230,126,34,0.05)',
     furnitureDensity: 0.6,
   },
   {
@@ -137,7 +141,7 @@ export const DEFAULT_TEMPLATES: RoomTemplate[] = [
     minWidth: 30, maxWidth: 34,
     minHeight: 20, maxHeight: 26,
     doorEdges: ['north', 'west'],
-    zoneColor: 'rgba(231,76,60,0.10)',
+    zoneColor: 'rgba(231,76,60,0.05)',
     furnitureDensity: 0.65,
   },
 ];
@@ -237,6 +241,49 @@ function furnitureTileId(type: FurnitureType): number {
   return entries.length > 0 ? entries[0]!.tileId : 161; // default: desk surface
 }
 
+type TileSpriteEntry = { sheet: 'interiors' | 'room-builder'; tileId: number; offsetX: number; offsetY: number; w: number; h: number };
+
+/**
+ * Build a tileSprites composite for a rectangular grid of tiles.
+ * Each tile is rendered at TILE_W × TILE_H (16 × 16 px).
+ * @param sheet   - tile sheet name
+ * @param tileIds - 2D array [row][col] of tile IDs (-1 = skip)
+ */
+function makeTileComposite(
+  sheet: 'interiors' | 'room-builder',
+  tileIds: number[][],
+): TileSpriteEntry[] {
+  const sprites: TileSpriteEntry[] = [];
+  for (let row = 0; row < tileIds.length; row++) {
+    const rowArr = tileIds[row]!;
+    for (let col = 0; col < rowArr.length; col++) {
+      const tid = rowArr[col]!;
+      if (tid < 0) continue;
+      sprites.push({
+        sheet,
+        tileId: tid,
+        offsetX: col * TILE_W,
+        offsetY: row * TILE_H,
+        w: TILE_W,
+        h: TILE_H,
+      });
+    }
+  }
+  return sprites;
+}
+
+/**
+ * Create a single-row composite of `count` repeated tiles.
+ * Convenience wrapper for makeTileComposite.
+ */
+function makeSingleRowComposite(
+  sheet: 'interiors' | 'room-builder',
+  tileId: number,
+  count: number,
+): TileSpriteEntry[] {
+  return makeTileComposite(sheet, [Array(count).fill(tileId)]);
+}
+
 // ── Furniture placement helpers ───────────────────────────────────────────────
 
 interface FurniturePlacement {
@@ -255,8 +302,11 @@ function placeOfficeFurniture(
   const plantTile = 1;  // small plant (_iT(1))
   const bigPlantTile = 16; // big plant (_iT(16))
 
-  const deskW = 90, deskH = 40;
-  const gapX = 8, gapY = 12;
+  // Desk is 5 tiles wide × 2 tiles tall (80×32) rendered as a multi-tile composite
+  const deskTilesW = 5, deskTilesH = 2;
+  const deskW = deskTilesW * TILE_W;   // 80 px
+  const deskH = deskTilesH * TILE_H;   // 32 px
+  const gapX = 8, gapY = 16;
   const startX = rx + 14;
   const startY = ry + 20;
   const cols = Math.min(2, Math.floor((rw - 28) / (deskW + gapX)));
@@ -267,18 +317,30 @@ function placeOfficeFurniture(
       const x = startX + dc * (deskW + gapX);
       const y = startY + dr * (deskH + gapY);
       if (x + deskW > rx + rw - 10 || y + deskH > ry + rh - 30) continue;
-      furniture.push({ type: 'rect', x, y, w: deskW, h: deskH, color: '#1c2a3a', tileSprite: iT(deskTile) });
-      furniture.push({ type: 'rect', x: x + 6, y: y + 8, w: 36, h: 26, color: '#1a3a6a', tileSprite: iT(monitorTile) });
+      // Desk: 5×2 tiles
+      furniture.push({
+        type: 'rect', x, y, w: deskW, h: deskH, color: '#1c2a3a',
+        tileSprites: makeTileComposite(
+          'interiors',
+          [[deskTile, deskTile, deskTile, deskTile, deskTile],
+           [deskTile, deskTile, deskTile, deskTile, deskTile]],
+        ),
+      });
+      // Monitor: single tile at native size, centred on desk
+      furniture.push({
+        type: 'rect', x: x + TILE_W, y: y + 2, w: TILE_W, h: TILE_H, color: '#1a3a6a',
+        tileSprites: makeSingleRowComposite('interiors', monitorTile, 1),
+      });
       colliders.push({ x, y, w: deskW, h: deskH });
     }
   }
 
-  // Corner plants
+  // Corner plants (native tile size 16×16)
   if (rng() > 0.3) {
-    furniture.push({ type: 'rect', x: rx + 6, y: ry + 6, w: 22, h: 22, color: '#1a6a1a', tileSprite: iT(bigPlantTile) });
+    furniture.push({ type: 'rect', x: rx + 6, y: ry + 6, w: TILE_W, h: TILE_H, color: '#1a6a1a', tileSprite: iT(bigPlantTile) });
   }
   if (rng() > 0.5) {
-    furniture.push({ type: 'rect', x: rx + rw - 28, y: ry + 6, w: 22, h: 22, color: '#1a5a1a', tileSprite: iT(plantTile) });
+    furniture.push({ type: 'rect', x: rx + rw - 22, y: ry + 6, w: TILE_W, h: TILE_H, color: '#1a5a1a', tileSprite: iT(plantTile) });
   }
 
   return { furniture, colliders };
@@ -291,36 +353,52 @@ function placeMeetingFurniture(
   const furniture: FurnitureShape[] = [];
   const colliders: Collider[] = [];
 
-  // Central conference table
+  // Central conference table — multi-tile composite (tiles in a grid)
   const tW = Math.round(rw * 0.55), tH = Math.round(rh * 0.5);
   const tx = rx + Math.round((rw - tW) / 2);
   const ty = ry + Math.round((rh - tH) / 2);
+  const tableTilesW = Math.max(1, Math.round(tW / TILE_W));
+  const tableTilesH = Math.max(1, Math.round(tH / TILE_H));
+  const actualTW = tableTilesW * TILE_W;
+  const actualTH = tableTilesH * TILE_H;
+  furniture.push({
+    type: 'rect', x: tx, y: ty, w: actualTW, h: actualTH, color: '#1a3a50', label: '📋 Meeting',
+    tileSprites: makeTileComposite(
+      'interiors',
+      Array.from({ length: tableTilesH }, () => Array(tableTilesW).fill(161)),
+    ),
+  });
+  colliders.push({ x: tx, y: ty, w: actualTW, h: actualTH });
 
-  furniture.push({ type: 'rect', x: tx, y: ty, w: tW, h: tH, color: '#1a3a50', tileSprite: iT(161), label: '📋 Meeting' });
-  colliders.push({ x: tx, y: ty, w: tW, h: tH });
-
-  // Chairs around the table
-  const chairCount = Math.min(5, Math.floor(tW / 50));
+  // Chairs around the table (use actualTW/TH)
+  const chairCount = Math.min(5, Math.floor(actualTW / 50));
   for (let i = 0; i < chairCount; i++) {
-    const cx = tx + 20 + i * Math.round(tW / chairCount);
+    const cx = tx + 20 + i * Math.round(actualTW / chairCount);
     furniture.push({ type: 'circle', x: cx, y: ty - 12, r: 10, color: '#1e3a50' });
-    furniture.push({ type: 'circle', x: cx, y: ty + tH + 12, r: 10, color: '#1e3a50' });
+    furniture.push({ type: 'circle', x: cx, y: ty + actualTH + 12, r: 10, color: '#1e3a50' });
   }
   // Side chairs
-  const sideRows = Math.min(2, Math.floor(tH / 40));
+  const sideRows = Math.min(2, Math.floor(actualTH / 40));
   for (let i = 0; i < sideRows; i++) {
-    const cy = ty + 20 + i * Math.round(tH / sideRows);
+    const cy = ty + 20 + i * Math.round(actualTH / sideRows);
     furniture.push({ type: 'circle', x: tx - 12, y: cy, r: 10, color: '#1e3a50' });
-    furniture.push({ type: 'circle', x: tx + tW + 12, y: cy, r: 10, color: '#1e3a50' });
+    furniture.push({ type: 'circle', x: tx + actualTW + 12, y: cy, r: 10, color: '#1e3a50' });
   }
 
-  // Projector screen on north wall
-  const screenW = Math.round(tW * 0.65);
+  // Projector screen on north wall — multi-tile (horizontal strip)
+  const screenTiles = Math.max(2, Math.round(actualTW * 0.65 / TILE_W));
+  const screenW = screenTiles * TILE_W;
   const sx = rx + Math.round((rw - screenW) / 2);
-  furniture.push({ type: 'rect', x: sx, y: ry + 6, w: screenW, h: 36, color: '#0a0a1a', tileSprite: iT(152), label: '📺 Projector' });
+  furniture.push({
+    type: 'rect', x: sx, y: ry + 6, w: screenW, h: TILE_H, color: '#0a0a1a', label: '📺 Projector',
+    tileSprites: makeSingleRowComposite('interiors', 152, screenTiles),
+  });
 
-  // Whiteboards
-  furniture.push({ type: 'rect', x: rx + 8, y: ry + 8, w: 54, h: 52, color: '#f0f0ff', tileSprite: iT(648) });
+  // Whiteboards — 2×3 tile composite
+  furniture.push({
+    type: 'rect', x: rx + 8, y: ry + 8, w: 2 * TILE_W, h: 3 * TILE_H, color: '#f0f0ff',
+    tileSprites: makeTileComposite('interiors', [[648, 648], [648, 648], [648, 648]]),
+  });
 
   return { furniture, colliders };
 }
@@ -332,30 +410,50 @@ function placeLoungeFurniture(
   const furniture: FurnitureShape[] = [];
   const colliders: Collider[] = [];
 
-  // Kitchen counter (top)
-  const counterW = rw - 12;
-  furniture.push({ type: 'rect', x: rx + 6, y: ry + 6, w: counterW, h: 36, color: '#3a2a10', tileSprite: iT(161), label: '☕ Kitchen' });
-  colliders.push({ x: rx + 6, y: ry + 6, w: counterW, h: 36 });
+  // Kitchen counter (top) — multi-tile horizontal strip
+  const counterTiles = Math.max(2, Math.floor((rw - 12) / TILE_W));
+  const counterW = counterTiles * TILE_W;
+  furniture.push({
+    type: 'rect', x: rx + 6, y: ry + 6, w: counterW, h: TILE_H, color: '#3a2a10', label: '☕ Kitchen',
+    tileSprites: makeSingleRowComposite('interiors', 161, counterTiles),
+  });
+  colliders.push({ x: rx + 6, y: ry + 6, w: counterW, h: TILE_H });
 
-  // Two sofas
-  furniture.push({ type: 'rect', x: rx + 6,  y: ry + 70, w: 106, h: 56, color: '#5a4820', tileSprite: iT(177), label: '🛋️ Sofa' });
-  colliders.push({ x: rx + 6, y: ry + 70, w: 106, h: 56 });
+  // Two sofas — 3×2 tile composite each
+  const sofaTilesW = 3, sofaTilesH = 2;
+  const sofaW = sofaTilesW * TILE_W, sofaH = sofaTilesH * TILE_H;
+  furniture.push({
+    type: 'rect', x: rx + 6, y: ry + 48, w: sofaW, h: sofaH, color: '#5a4820', label: '🛋️ Sofa',
+    tileSprites: makeTileComposite('interiors', [[177, 177, 177], [177, 177, 177]]),
+  });
+  colliders.push({ x: rx + 6, y: ry + 48, w: sofaW, h: sofaH });
   if (rh > 120) {
-    furniture.push({ type: 'rect', x: rx + 6, y: ry + 150, w: 106, h: 56, color: '#5a4820', tileSprite: iT(177) });
-    colliders.push({ x: rx + 6, y: ry + 150, w: 106, h: 56 });
+    furniture.push({
+      type: 'rect', x: rx + 6, y: ry + 108, w: sofaW, h: sofaH, color: '#5a4820',
+      tileSprites: makeTileComposite('interiors', [[177, 177, 177], [177, 177, 177]]),
+    });
+    colliders.push({ x: rx + 6, y: ry + 108, w: sofaW, h: sofaH });
   }
 
-  // Coffee table
-  furniture.push({ type: 'rect', x: rx + 120, y: ry + 80, w: 82, h: 52, color: '#3a2a08', tileSprite: iT(161) });
+  // Coffee table — 2×2 tile composite
+  furniture.push({
+    type: 'rect', x: rx + sofaW + 16, y: ry + 56, w: 2 * TILE_W, h: 2 * TILE_H, color: '#3a2a08',
+    tileSprites: makeTileComposite('interiors', [[161, 161], [161, 161]]),
+  });
 
-  // TV on south wall
-  if (rh > 150) {
-    furniture.push({ type: 'rect', x: rx + 6, y: ry + rh - 70, w: 120, h: 60, color: '#0a0a1a', tileSprite: iT(152), label: '📺 TV' });
+  // TV on south wall — multi-tile horizontal
+  if (rh > 130) {
+    const tvTiles = Math.min(5, Math.floor(rw / TILE_W / 2));
+    const tvW = tvTiles * TILE_W;
+    furniture.push({
+      type: 'rect', x: rx + 6, y: ry + rh - 3 * TILE_H, w: tvW, h: TILE_H, color: '#0a0a1a', label: '📺 TV',
+      tileSprites: makeSingleRowComposite('interiors', 152, tvTiles),
+    });
   }
 
-  // Plants
+  // Plants (native 16×16 tile size)
   if (rng() > 0.4) {
-    furniture.push({ type: 'rect', x: rx + rw - 36, y: ry + rh - 34, w: 28, h: 28, color: '#1a6a1a', tileSprite: iT(16) });
+    furniture.push({ type: 'rect', x: rx + rw - 22, y: ry + rh - 22, w: TILE_W, h: TILE_H, color: '#1a6a1a', tileSprite: iT(16) });
   }
 
   return { furniture, colliders };
@@ -370,8 +468,11 @@ function placeEngineeringFurniture(
   const deskTile = 128;  // _iT(128) engineering desk
   const monitorTile = furnitureTileId('monitor');
 
-  const deskW = 80, deskH = 40;
-  const colCount = Math.min(5, Math.floor((rw - 60) / (deskW + 10)));
+  // Desk: 5 tiles wide × 2 tiles tall
+  const deskTilesW = 5, deskTilesH = 2;
+  const deskW = deskTilesW * TILE_W;
+  const deskH = deskTilesH * TILE_H;
+  const colCount = Math.min(4, Math.floor((rw - 60) / (deskW + 10)));
   const rowCount = Math.min(2, Math.floor((rh - 80) / (deskH + 20)));
   const startX = rx + 16;
   const startY = ry + 16;
@@ -381,26 +482,47 @@ function placeEngineeringFurniture(
       const x = startX + dc * (deskW + 10);
       const y = startY + dr * (deskH + 30);
       if (x + deskW > rx + rw - 60 || y + deskH > ry + rh - 40) continue;
-      furniture.push({ type: 'rect', x, y, w: deskW, h: deskH, color: '#1a1030', tileSprite: iT(deskTile) });
-      furniture.push({ type: 'rect', x: x + 6, y: y + 8, w: 36, h: 26, color: '#2a1a4a', tileSprite: iT(monitorTile) });
+      furniture.push({
+        type: 'rect', x, y, w: deskW, h: deskH, color: '#1a1030',
+        tileSprites: makeTileComposite(
+          'interiors',
+          [[deskTile, deskTile, deskTile, deskTile, deskTile],
+           [deskTile, deskTile, deskTile, deskTile, deskTile]],
+        ),
+      });
+      furniture.push({
+        type: 'rect', x: x + TILE_W, y: y + 2, w: TILE_W, h: TILE_H, color: '#2a1a4a',
+        tileSprites: makeSingleRowComposite('interiors', monitorTile, 1),
+      });
       colliders.push({ x, y, w: deskW, h: deskH });
     }
   }
 
-  // Server rack on east wall
-  const srX = rx + rw - 60;
-  const srH = rh - 30;
-  furniture.push({ type: 'rect', x: srX, y: ry + 6, w: 56, h: srH, color: '#0a1a2a', tileSprite: iT(152), label: '⚙️ Servers' });
-  colliders.push({ x: srX, y: ry + 6, w: 56, h: srH, label: 'server-rack' });
+  // Server rack on east wall — 2×N tile composite
+  const srX = rx + rw - 2 * TILE_W - 8;
+  const srTilesH = Math.max(2, Math.floor((rh - 30) / TILE_H));
+  const srH = srTilesH * TILE_H;
+  furniture.push({
+    type: 'rect', x: srX, y: ry + 6, w: 2 * TILE_W, h: srH, color: '#0a1a2a', label: '⚙️ Servers',
+    tileSprites: makeTileComposite(
+      'interiors',
+      Array.from({ length: srTilesH }, () => [152, 152]),
+    ),
+  });
+  colliders.push({ x: srX, y: ry + 6, w: 2 * TILE_W, h: srH, label: 'server-rack' });
 
-  // Whiteboards
+  // Whiteboards — multi-tile composite
   if (rng() > 0.3) {
-    furniture.push({ type: 'rect', x: rx + 16, y: ry + rh - 70, w: 150, h: 56, color: '#f0f0ff', tileSprite: iT(648), label: '📐 Architecture' });
+    const wbTiles = Math.max(2, Math.floor(Math.min(150, rw - 30) / TILE_W));
+    furniture.push({
+      type: 'rect', x: rx + 16, y: ry + rh - 3 * TILE_H, w: wbTiles * TILE_W, h: 3 * TILE_H, color: '#f0f0ff', label: '📐 Architecture',
+      tileSprites: makeTileComposite('interiors', Array.from({ length: 3 }, () => Array(wbTiles).fill(648))),
+    });
   }
 
-  // Plants
+  // Plants (native tile size)
   if (rng() > 0.5) {
-    furniture.push({ type: 'rect', x: rx + 6, y: ry + 6, w: 22, h: 22, color: '#1a5a1a', tileSprite: iT(1) });
+    furniture.push({ type: 'rect', x: rx + 6, y: ry + 6, w: TILE_W, h: TILE_H, color: '#1a5a1a', tileSprite: iT(1) });
   }
 
   return { furniture, colliders };
@@ -415,7 +537,10 @@ function placeProductFurniture(
   const deskTile = furnitureTileId('desk');
   const monitorTile = furnitureTileId('monitor');
 
-  const deskW = 80, deskH = 40;
+  // Desk: 5 tiles wide × 2 tiles tall
+  const deskTilesW = 5, deskTilesH = 2;
+  const deskW = deskTilesW * TILE_W;
+  const deskH = deskTilesH * TILE_H;
   const colCount = Math.min(3, Math.floor((rw - 40) / (deskW + 12)));
   const rowCount = Math.min(2, Math.floor((rh - 100) / (deskH + 20)));
   const startX = rx + 14;
@@ -426,22 +551,41 @@ function placeProductFurniture(
       const x = startX + dc * (deskW + 12);
       const y = startY + dr * (deskH + 20);
       if (x + deskW > rx + rw - 14 || y + deskH > ry + rh - 40) continue;
-      furniture.push({ type: 'rect', x, y, w: deskW, h: deskH, color: '#20140a', tileSprite: iT(deskTile) });
-      furniture.push({ type: 'rect', x: x + 6, y: y + 8, w: 36, h: 26, color: '#3a2008', tileSprite: iT(monitorTile) });
+      furniture.push({
+        type: 'rect', x, y, w: deskW, h: deskH, color: '#20140a',
+        tileSprites: makeTileComposite(
+          'interiors',
+          [[deskTile, deskTile, deskTile, deskTile, deskTile],
+           [deskTile, deskTile, deskTile, deskTile, deskTile]],
+        ),
+      });
+      furniture.push({
+        type: 'rect', x: x + TILE_W, y: y + 2, w: TILE_W, h: TILE_H, color: '#3a2008',
+        tileSprites: makeSingleRowComposite('interiors', monitorTile, 1),
+      });
       colliders.push({ x, y, w: deskW, h: deskH });
     }
   }
 
-  // Kanban boards (south wall)
-  const boardCount = Math.min(3, Math.floor((rw - 30) / 140));
+  // Kanban boards (south wall) — multi-tile composites
+  const boardTilesW = 5, boardTilesH = 3;
+  const boardW = boardTilesW * TILE_W, boardH = boardTilesH * TILE_H;
+  const boardGap = 8;
+  const boardCount = Math.min(3, Math.floor((rw - 30) / (boardW + boardGap)));
   for (let i = 0; i < boardCount; i++) {
-    const bx = rx + 10 + i * 140;
+    const bx = rx + 10 + i * (boardW + boardGap);
+    const by = ry + rh - boardH - 4;
     const boardLabel = i === 0 ? '📋 Sprint' : i === 1 ? '📊 Backlog' : null;
-    const boardShape: FurnitureShape = { type: 'rect', x: bx, y: ry + rh - 60, w: 128, h: 52, color: '#f0f0e0', tileSprite: iT(648) };
+    const boardShape: FurnitureShape = {
+      type: 'rect', x: bx, y: by, w: boardW, h: boardH, color: '#f0f0e0',
+      tileSprites: makeTileComposite('interiors', Array.from({ length: boardTilesH }, () => Array(boardTilesW).fill(648))),
+    };
     if (boardLabel) boardShape.label = boardLabel;
     furniture.push(boardShape);
   }
-  colliders.push({ x: rx + 10, y: ry + rh - 60, w: boardCount * 140 - 12, h: 52 });
+  if (boardCount > 0) {
+    colliders.push({ x: rx + 10, y: ry + rh - boardH - 4, w: boardCount * (boardW + boardGap) - boardGap, h: boardH });
+  }
 
   // Pod table
   if (rw > 200 && rng() > 0.4) {
@@ -454,8 +598,8 @@ function placeProductFurniture(
     furniture.push({ type: 'circle', x: podX - 50, y: podY, r: 10, color: '#20140a' });
   }
 
-  // Plants
-  furniture.push({ type: 'rect', x: rx + 6, y: ry + 6, w: 22, h: 22, color: '#1a5a1a', tileSprite: iT(1) });
+  // Plants (native tile size)
+  furniture.push({ type: 'rect', x: rx + 6, y: ry + 6, w: TILE_W, h: TILE_H, color: '#1a5a1a', tileSprite: iT(1) });
 
   return { furniture, colliders };
 }
@@ -469,7 +613,10 @@ function placeDesignFurniture(
   const deskTile = furnitureTileId('desk');
   const monitorTile = furnitureTileId('monitor');
 
-  const deskW = 80, deskH = 40;
+  // Desk: 5 tiles wide × 2 tiles tall
+  const deskTilesW = 5, deskTilesH = 2;
+  const deskW = deskTilesW * TILE_W;
+  const deskH = deskTilesH * TILE_H;
   const colCount = Math.min(4, Math.floor((rw - 40) / (deskW + 8)));
   const startX = rx + 12;
   const startY = ry + 20;
@@ -478,31 +625,54 @@ function placeDesignFurniture(
     const x = startX + dc * (deskW + 8);
     const y = startY;
     if (x + deskW > rx + rw - 12) continue;
-    furniture.push({ type: 'rect', x, y, w: deskW, h: deskH, color: '#2e0e16', tileSprite: iT(deskTile) });
-    furniture.push({ type: 'rect', x: x + 6, y: y + 8, w: 36, h: 26, color: '#4a1a2a', tileSprite: iT(monitorTile) });
+    furniture.push({
+      type: 'rect', x, y, w: deskW, h: deskH, color: '#2e0e16',
+      tileSprites: makeTileComposite(
+        'interiors',
+        [[deskTile, deskTile, deskTile, deskTile, deskTile],
+         [deskTile, deskTile, deskTile, deskTile, deskTile]],
+      ),
+    });
+    furniture.push({
+      type: 'rect', x: x + TILE_W, y: y + 2, w: TILE_W, h: TILE_H, color: '#4a1a2a',
+      tileSprites: makeSingleRowComposite('interiors', monitorTile, 1),
+    });
     colliders.push({ x, y, w: deskW, h: deskH });
   }
 
-  // Large display wall (east)
-  furniture.push({ type: 'rect', x: rx + rw - 110, y: ry + 50, w: 100, h: Math.min(200, rh - 80), color: '#1a0010', tileSprite: iT(152), label: '🎨 Design' });
-  colliders.push({ x: rx + rw - 110, y: ry + 50, w: 100, h: Math.min(200, rh - 80), label: 'large-display' });
+  // Large display wall (east) — 2×N tile composite
+  const dispTilesH = Math.max(2, Math.min(12, Math.floor((rh - 80) / TILE_H)));
+  const dispH = dispTilesH * TILE_H;
+  const dispX = rx + rw - 2 * TILE_W - 8;
+  furniture.push({
+    type: 'rect', x: dispX, y: ry + 50, w: 2 * TILE_W, h: dispH, color: '#1a0010', label: '🎨 Design',
+    tileSprites: makeTileComposite('interiors', Array.from({ length: dispTilesH }, () => [152, 152])),
+  });
+  colliders.push({ x: dispX, y: ry + 50, w: 2 * TILE_W, h: dispH, label: 'large-display' });
 
-  // Drawing boards (south)
-  const boardCount = Math.min(3, Math.floor((rw - 80) / 140));
+  // Drawing boards (south) — multi-tile composites
+  const boardTilesW = 5, boardTilesH = 4;
+  const boardW = boardTilesW * TILE_W, boardH = boardTilesH * TILE_H;
+  const boardGap = 8;
+  const boardCount = Math.min(3, Math.floor((rw - 80) / (boardW + boardGap)));
   for (let i = 0; i < boardCount; i++) {
-    const bx = rx + 6 + i * 140;
+    const bx = rx + 6 + i * (boardW + boardGap);
+    const by = ry + rh - boardH - 4;
     const boardLabel = i === 0 ? '✏️ Sketches' : i === 1 ? '🖌️ Design' : null;
-    const boardShape: FurnitureShape = { type: 'rect', x: bx, y: ry + rh - 80, w: 132, h: 72, color: '#f0f0e8', tileSprite: iT(648) };
+    const boardShape: FurnitureShape = {
+      type: 'rect', x: bx, y: by, w: boardW, h: boardH, color: '#f0f0e8',
+      tileSprites: makeTileComposite('interiors', Array.from({ length: boardTilesH }, () => Array(boardTilesW).fill(648))),
+    };
     if (boardLabel) boardShape.label = boardLabel;
     furniture.push(boardShape);
   }
   if (boardCount > 0) {
-    colliders.push({ x: rx + 6, y: ry + rh - 80, w: boardCount * 140 - 8, h: 72 });
+    colliders.push({ x: rx + 6, y: ry + rh - boardH - 4, w: boardCount * (boardW + boardGap) - boardGap, h: boardH });
   }
 
-  // Plants
+  // Plants (native tile size)
   if (rng() > 0.4) {
-    furniture.push({ type: 'rect', x: rx + 6, y: ry + rh - 34, w: 28, h: 28, color: '#1a6a1a', tileSprite: iT(16) });
+    furniture.push({ type: 'rect', x: rx + 6, y: ry + rh - TILE_H - 4, w: TILE_W, h: TILE_H, color: '#1a6a1a', tileSprite: iT(16) });
   }
 
   return { furniture, colliders };
@@ -742,51 +912,51 @@ export function generateMap(seed = 0, templates: RoomTemplate[] = DEFAULT_TEMPLA
   // Top zone segment
   for (let r = row0Y; r < row0Y + r0H; r++) {
     if (dvT1.has(r)) continue;
-    wallData[r * MAP_COLS + col1X] = WALL_DEFAULT;
+    wallData[r * MAP_COLS + col1X] = WALL_RIGHT;
   }
   // Bottom zone segment
   for (let r = row1Y; r < row1Y + r1H; r++) {
     if (dvB1.has(r)) continue;
-    wallData[r * MAP_COLS + col1X] = WALL_DEFAULT;
+    wallData[r * MAP_COLS + col1X] = WALL_RIGHT;
   }
 
   // Vertical wall at col2X
   for (let r = row0Y; r < row0Y + r0H; r++) {
     if (dvT2.has(r)) continue;
-    wallData[r * MAP_COLS + col2X] = WALL_DEFAULT;
+    wallData[r * MAP_COLS + col2X] = WALL_RIGHT;
   }
   for (let r = row1Y; r < row1Y + r1H; r++) {
     if (dvB2.has(r)) continue;
-    wallData[r * MAP_COLS + col2X] = WALL_DEFAULT;
+    wallData[r * MAP_COLS + col2X] = WALL_RIGHT;
   }
 
-  // Horizontal wall at corridorY (top of corridor)
+  // Horizontal wall at corridorY (top of corridor) — south-facing (bottom of top rooms)
   for (let c = col0X; c < col0X + c0W; c++) {
     if (dhL_top.has(c)) continue;
-    wallData[corridorY * MAP_COLS + c] = WALL_DEFAULT;
+    wallData[corridorY * MAP_COLS + c] = WALL_BOTTOM;
   }
   for (let c = col1X; c < col1X + c1W; c++) {
     if (dhM_top.has(c)) continue;
-    wallData[corridorY * MAP_COLS + c] = WALL_DEFAULT;
+    wallData[corridorY * MAP_COLS + c] = WALL_BOTTOM;
   }
   for (let c = col2X; c < col2X + c2W; c++) {
     if (dhR_top.has(c)) continue;
-    wallData[corridorY * MAP_COLS + c] = WALL_DEFAULT;
+    wallData[corridorY * MAP_COLS + c] = WALL_BOTTOM;
   }
 
-  // Horizontal wall at row1Y-1 (bottom of corridor)
+  // Horizontal wall at row1Y-1 (bottom of corridor) — north-facing (top of bottom rooms)
   const corrBotY = row1Y - 1;
   for (let c = col0X; c < col0X + c0W; c++) {
     if (dhL_bot.has(c)) continue;
-    wallData[corrBotY * MAP_COLS + c] = WALL_DEFAULT;
+    wallData[corrBotY * MAP_COLS + c] = WALL_TOP;
   }
   for (let c = col1X; c < col1X + c1W; c++) {
     if (dhM_bot.has(c)) continue;
-    wallData[corrBotY * MAP_COLS + c] = WALL_DEFAULT;
+    wallData[corrBotY * MAP_COLS + c] = WALL_TOP;
   }
   for (let c = col2X; c < col2X + c2W; c++) {
     if (dhR_bot.has(c)) continue;
-    wallData[corrBotY * MAP_COLS + c] = WALL_DEFAULT;
+    wallData[corrBotY * MAP_COLS + c] = WALL_TOP;
   }
 
   // ── Colliders ─────────────────────────────────────────────────────────────
@@ -846,6 +1016,42 @@ export function generateMap(seed = 0, templates: RoomTemplate[] = DEFAULT_TEMPLA
   addRoomFurniture(col1X, row1Y, c1W, r1H, tmpl[4]!);
   addRoomFurniture(col2X, row1Y, c2W, r1H, tmpl[5]!);
 
+  // Apply furnitureOverrides per template
+  const roomGrids = [
+    { t: tmpl[0]!, gx: col0X, gy: row0Y },
+    { t: tmpl[1]!, gx: col1X, gy: row0Y },
+    { t: tmpl[2]!, gx: col2X, gy: row0Y },
+    { t: tmpl[3]!, gx: col0X, gy: row1Y },
+    { t: tmpl[4]!, gx: col1X, gy: row1Y },
+    { t: tmpl[5]!, gx: col2X, gy: row1Y },
+  ];
+  for (const { t } of roomGrids) {
+    if (t.furnitureOverrides) {
+      allFurniture.push(...t.furnitureOverrides);
+    }
+  }
+
+  // Apply tileOverrides per template (overwrite floor or wall data at specific cells)
+  const roomTileBounds = [
+    { t: tmpl[0]!, x: col0X, y: row0Y, w: c0W, h: r0H },
+    { t: tmpl[1]!, x: col1X, y: row0Y, w: c1W, h: r0H },
+    { t: tmpl[2]!, x: col2X, y: row0Y, w: c2W, h: r0H },
+    { t: tmpl[3]!, x: col0X, y: row1Y, w: c0W, h: r1H },
+    { t: tmpl[4]!, x: col1X, y: row1Y, w: c1W, h: r1H },
+    { t: tmpl[5]!, x: col2X, y: row1Y, w: c2W, h: r1H },
+  ];
+  for (const { t, x: bx, y: by } of roomTileBounds) {
+    if (t.tileOverrides) {
+      for (const ov of t.tileOverrides) {
+        const tc = bx + ov.col;
+        const tr = by + ov.row;
+        if (tc >= 0 && tc < MAP_COLS && tr >= 0 && tr < MAP_ROWS) {
+          floorData[tr * MAP_COLS + tc] = ov.tileId;
+        }
+      }
+    }
+  }
+
   // Corridor decorations
   const corrPx = corridorY * TILE_H;
   allFurniture.push({ type: 'rect', x: (col0X + c0W - 3) * TILE_W, y: corrPx + 2, w: 24, h: 24, color: '#2a3a4a', tileSprite: iT(161) });
@@ -862,7 +1068,7 @@ export function generateMap(seed = 0, templates: RoomTemplate[] = DEFAULT_TEMPLA
     offsetX: 0,
     offsetY: 0,
     z:       0,
-    alpha:   0.55,
+    alpha:   0.9,
   };
 
   const wallLayer: TileLayer = {
@@ -882,7 +1088,7 @@ export function generateMap(seed = 0, templates: RoomTemplate[] = DEFAULT_TEMPLA
     worldWidth:  WORLD_WIDTH,
     worldHeight: WORLD_HEIGHT,
     zones,
-    colliders:   [],
+    colliders:   allColliders,
     furniture:   allFurniture,
     tiles:       [floorLayer, wallLayer],
   };

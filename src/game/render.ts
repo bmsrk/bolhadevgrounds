@@ -84,11 +84,11 @@ export function render(
   // ── Radial vignette (edges darker than centre) ────────────────────────────
   ctx.save();
   const vgr = ctx.createRadialGradient(
-    map.worldWidth / 2, map.worldHeight / 2, map.worldWidth * 0.2,
-    map.worldWidth / 2, map.worldHeight / 2, map.worldWidth * 0.75,
+    map.worldWidth / 2, map.worldHeight / 2, map.worldWidth * 0.35,
+    map.worldWidth / 2, map.worldHeight / 2, map.worldWidth * 0.85,
   );
   vgr.addColorStop(0, 'rgba(0,0,0,0)');
-  vgr.addColorStop(1, 'rgba(0,0,0,0.55)');
+  vgr.addColorStop(1, 'rgba(0,0,0,0.30)');
   ctx.fillStyle = vgr;
   ctx.fillRect(0, 0, map.worldWidth, map.worldHeight);
   ctx.restore();
@@ -282,7 +282,18 @@ function drawFurniture(ctx: CanvasRenderingContext2D, f: FurnitureShape): void {
   if (f.type === 'rect') {
     const w = f.w ?? 16;
     const h = f.h ?? 16;
-    if (f.tileSprite) {
+    if (f.tileSprites && f.tileSprites.length > 0) {
+      // Multi-tile composite: draw each sub-tile individually.
+      let anyDrawn = false;
+      for (const ts of f.tileSprites) {
+        const drawn = drawTile(ctx, ts.sheet, ts.tileId, f.x + ts.offsetX, f.y + ts.offsetY, ts.w, ts.h);
+        if (drawn) anyDrawn = true;
+      }
+      if (!anyDrawn) {
+        ctx.fillStyle = f.color;
+        ctx.fillRect(f.x, f.y, w, h);
+      }
+    } else if (f.tileSprite) {
       // Scale the tile sprite to fill the furniture rect.
       // Falls back to the solid colour rect while the sheet is still loading.
       const drawn = drawTile(ctx, f.tileSprite.sheet, f.tileSprite.tileId, f.x, f.y, w, h);
