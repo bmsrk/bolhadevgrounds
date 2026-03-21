@@ -1,4 +1,4 @@
-import type { GameMap, TileLayer, InteractiveObject } from '../types.js';
+import type { GameMap, TileLayer } from '../types.js';
 import { WORLD_WIDTH, WORLD_HEIGHT } from '../constants.js';
 import { generateMap } from './room-generator.js';
 
@@ -279,20 +279,6 @@ const _wallLayer: TileLayer = {
   alpha:   1.0,
 };
 
-// ── Interactive proximity objects ─────────────────────────────────────────────
-// Positions are checked each frame in main.ts; a tooltip shows on proximity.
-export const INTERACTIVE_OBJECTS: readonly InteractiveObject[] = [
-  { x:  100, y: 375, r: 40, label: '☕ Grab a coffee'          },
-  { x:  515, y: 128, r: 65, label: '📋 Join the meeting'       },
-  { x:  855, y: 208, r: 55, label: '📐 View architecture'      },
-  { x:   65, y: 535, r: 55, label: '🛋️ Take a break'           },
-  { x:  490, y: 490, r: 50, label: '💻 Product backlog'        },
-  { x:  960, y: 548, r: 50, label: '🎨 Design review'          },
-  { x: 1100, y:  85, r: 50, label: '⚙️ Engineering standup'    },
-  { x:  205, y: 618, r: 45, label: '🏓 Game room'              },
-  { x:  222, y: 248, r: 40, label: '🖥️ Reception'              },
-];
-
 // ── Interiors tile helper ─────────────────────────────────────────────────────
 const _iT = (tileId: number) => ({ sheet: 'interiors' as const, tileId });
 
@@ -491,6 +477,20 @@ export const STATIC_GAME_MAP: GameMap = {
   ],
 
   tiles: [_floorLayer, _wallLayer],
+
+  spawnPoint: { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2 },
+
+  interactiveObjects: [
+    { x:  100, y: 375, r: 40, label: '☕ Grab a coffee'          },
+    { x:  515, y: 128, r: 65, label: '📋 Join the meeting'       },
+    { x:  855, y: 208, r: 55, label: '📐 View architecture'      },
+    { x:   65, y: 535, r: 55, label: '🛋️ Take a break'           },
+    { x:  490, y: 490, r: 50, label: '💻 Product backlog'        },
+    { x:  960, y: 548, r: 50, label: '🎨 Design review'          },
+    { x: 1100, y:  85, r: 50, label: '⚙️ Engineering standup'    },
+    { x:  205, y: 618, r: 45, label: '🏓 Game room'              },
+    { x:  222, y: 248, r: 40, label: '🖥️ Reception'              },
+  ],
 };
 
 /**

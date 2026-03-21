@@ -3,9 +3,9 @@
  * This module is the single entry point imported by index.html.
  */
 
-import { WORLD_WIDTH, WORLD_HEIGHT, PLAYER_COLORS, SEND_HZ, MAX_CHAT_MESSAGES } from './constants.js';
+import { PLAYER_COLORS, SEND_HZ, MAX_CHAT_MESSAGES } from './constants.js';
 import type { GameState, LocalPlayer, NetMsg, ChatEntry, CharacterName, CharacterVariant, Facing } from './types.js';
-import { GAME_MAP, INTERACTIVE_OBJECTS, generateGameMap } from './game/map.js';
+import { GAME_MAP, generateGameMap } from './game/map.js';
 import { startLoop } from './game/loop.js';
 import { initInput, getInput } from './game/input.js';
 import { movePlayer } from './game/physics.js';
@@ -87,6 +87,13 @@ function newUUID(): string {
   return crypto.randomUUID();
 }
 
+// ── Map generation ────────────────────────────────────────────────────────
+
+// Use ?seed= query param for deterministic map; fall back to the module-level
+// GAME_MAP (seed 0) so existing behaviour is unchanged when no seed is given.
+const mapSeed   = getMapSeed();
+const activeMap = mapSeed !== undefined ? generateGameMap(mapSeed) : GAME_MAP;
+
 // ── Initialise game state ──────────────────────────────────────────────────
 
 const playerId  = getOrCreatePlayerId();
@@ -95,8 +102,8 @@ const savedName = getSavedName();
 const local: LocalPlayer = {
   id:        playerId,
   name:      savedName || 'Player',
-  x:         WORLD_WIDTH  / 2,
-  y:         WORLD_HEIGHT / 2,
+  x:         activeMap.spawnPoint.x,
+  y:         activeMap.spawnPoint.y,
   color:     colorFromId(playerId),
   character: getSavedCharacter(),
   variant:   getSavedVariant(),
@@ -163,13 +170,6 @@ loadTileSheet(
   'pixelart/Modern tiles_Free/Interiors_free/16x16/Interiors_free_16x16.png',
   16, 16,
 );
-
-// ── Map generation ────────────────────────────────────────────────────────
-
-// Use ?seed= query param for deterministic map; fall back to the module-level
-// GAME_MAP (seed 0) so existing behaviour is unchanged when no seed is given.
-const mapSeed = getMapSeed();
-const activeMap = mapSeed !== undefined ? generateGameMap(mapSeed) : GAME_MAP;
 
 // ── Input ─────────────────────────────────────────────────────────────────
 
@@ -460,7 +460,7 @@ startLoop((dt: number) => {
 
   // ── Proximity tooltip ─────────────────────────────────────────────────
   state.proximityTooltip = null;
-  for (const obj of INTERACTIVE_OBJECTS) {
+  for (const obj of activeMap.interactiveObjects) {
     const ddx = state.local.x - obj.x;
     const ddy = state.local.y - obj.y;
     if (ddx * ddx + ddy * ddy < obj.r * obj.r) {

@@ -1,13 +1,13 @@
 /**
  * src/game/room-generator.ts — Procedural room generation engine.
  *
- * Uses the tile registry to generate a complete GameMap with procedural rooms.
- * The layout mirrors the existing static map structure (2 rows × 3 columns of
- * rooms with a central corridor) but uses proper directional wall tiles, seeded
- * randomness, and rule-based furniture placement per room purpose.
+ * Generates a single large open room centred in the world.
+ * Furniture is placed exclusively along the four walls so the centre area
+ * is always clear.  `spawnPoint` is the geometric centre of the room and is
+ * guaranteed to be free of every collider.
  */
 
-import type { GameMap, TileLayer, Collider, Zone, FurnitureShape } from '../types.js';
+import type { GameMap, TileLayer, Collider, Zone, FurnitureShape, InteractiveObject } from '../types.js';
 import { WORLD_WIDTH, WORLD_HEIGHT } from '../constants.js';
 import {
   type FloorTheme,
@@ -175,13 +175,6 @@ function resolveWallTile(category: Parameters<typeof getWallTile>[0]): number {
   return entry ? entry.tileId : WALL_DEFAULT;
 }
 
-// Floor tile for corridor (stone)
-function corridorFloor(c: number, r: number): number {
-  const tiles = getFloorTiles('stone');
-  if (tiles.length === 0) return rbTile(19, 0);
-  return tiles[(c % 3) + (r % 2) * 3 < tiles.length ? (c % 3) + (r % 2) * 3 : 0]!.tileId;
-}
-
 // ── Floor fill helpers ────────────────────────────────────────────────────────
 
 function fillFloorForTheme(col: number, row: number, theme: FloorTheme): number {
@@ -211,20 +204,6 @@ function fillFloorBorder(
         // opposite shade from its adjacent interior tile, creating a visible frame.
         data[r * MAP_COLS + c] = fillFloorForTheme(c, r + 1, theme);
       }
-    }
-  }
-}
-
-/** Fill an arbitrary rect with a flat floor theme (used for carpets and rugs). */
-function fillFloorRect(
-  data: number[],
-  x: number, y: number, w: number, h: number,
-  theme: FloorTheme,
-): void {
-  for (let r = y; r < y + h; r++) {
-    for (let c = x; c < x + w; c++) {
-      if (c < 0 || c >= MAP_COLS || r < 0 || r >= MAP_ROWS) continue;
-      data[r * MAP_COLS + c] = fillFloorForTheme(c, r, theme);
     }
   }
 }
@@ -284,422 +263,11 @@ function makeSingleRowComposite(
   return makeTileComposite(sheet, [Array(count).fill(tileId)]);
 }
 
-// ── Furniture placement helpers ───────────────────────────────────────────────
-
-interface FurniturePlacement {
-  furniture: FurnitureShape[];
-  colliders: Collider[];
-}
-
-function placeOfficeFurniture(
-  rx: number, ry: number, rw: number, rh: number,
-  rng: () => number,
-): FurniturePlacement {
-  const furniture: FurnitureShape[] = [];
-  const colliders: Collider[] = [];
-  const deskTile = furnitureTileId('desk');
-  const monitorTile = furnitureTileId('monitor');
-  const plantTile = 1;  // small plant (_iT(1))
-  const bigPlantTile = 16; // big plant (_iT(16))
-
-  // Desk is 5 tiles wide × 2 tiles tall (80×32) rendered as a multi-tile composite
-  const deskTilesW = 5, deskTilesH = 2;
-  const deskW = deskTilesW * TILE_W;   // 80 px
-  const deskH = deskTilesH * TILE_H;   // 32 px
-  const gapX = 8, gapY = 16;
-  const startX = rx + 14;
-  const startY = ry + 20;
-  const cols = Math.min(2, Math.floor((rw - 28) / (deskW + gapX)));
-  const rows = Math.min(3, Math.floor((rh - 60) / (deskH + gapY)));
-
-  for (let dr = 0; dr < rows; dr++) {
-    for (let dc = 0; dc < cols; dc++) {
-      const x = startX + dc * (deskW + gapX);
-      const y = startY + dr * (deskH + gapY);
-      if (x + deskW > rx + rw - 10 || y + deskH > ry + rh - 30) continue;
-      // Desk: 5×2 tiles
-      furniture.push({
-        type: 'rect', x, y, w: deskW, h: deskH, color: '#1c2a3a',
-        tileSprites: makeTileComposite(
-          'interiors',
-          [[deskTile, deskTile, deskTile, deskTile, deskTile],
-           [deskTile, deskTile, deskTile, deskTile, deskTile]],
-        ),
-      });
-      // Monitor: single tile at native size, centred on desk
-      furniture.push({
-        type: 'rect', x: x + TILE_W, y: y + 2, w: TILE_W, h: TILE_H, color: '#1a3a6a',
-        tileSprites: makeSingleRowComposite('interiors', monitorTile, 1),
-      });
-      colliders.push({ x, y, w: deskW, h: deskH });
-    }
-  }
-
-  // Corner plants (native tile size 16×16)
-  if (rng() > 0.3) {
-    furniture.push({ type: 'rect', x: rx + 6, y: ry + 6, w: TILE_W, h: TILE_H, color: '#1a6a1a', tileSprite: iT(bigPlantTile) });
-  }
-  if (rng() > 0.5) {
-    furniture.push({ type: 'rect', x: rx + rw - 22, y: ry + 6, w: TILE_W, h: TILE_H, color: '#1a5a1a', tileSprite: iT(plantTile) });
-  }
-
-  return { furniture, colliders };
-}
-
-function placeMeetingFurniture(
-  rx: number, ry: number, rw: number, rh: number,
-  _rng: () => number,
-): FurniturePlacement {
-  const furniture: FurnitureShape[] = [];
-  const colliders: Collider[] = [];
-
-  // Central conference table — multi-tile composite (tiles in a grid)
-  const tW = Math.round(rw * 0.55), tH = Math.round(rh * 0.5);
-  const tx = rx + Math.round((rw - tW) / 2);
-  const ty = ry + Math.round((rh - tH) / 2);
-  const tableTilesW = Math.max(1, Math.round(tW / TILE_W));
-  const tableTilesH = Math.max(1, Math.round(tH / TILE_H));
-  const actualTW = tableTilesW * TILE_W;
-  const actualTH = tableTilesH * TILE_H;
-  furniture.push({
-    type: 'rect', x: tx, y: ty, w: actualTW, h: actualTH, color: '#1a3a50', label: '📋 Meeting',
-    tileSprites: makeTileComposite(
-      'interiors',
-      Array.from({ length: tableTilesH }, () => Array(tableTilesW).fill(161)),
-    ),
-  });
-  colliders.push({ x: tx, y: ty, w: actualTW, h: actualTH });
-
-  // Chairs around the table (use actualTW/TH)
-  const chairCount = Math.min(5, Math.floor(actualTW / 50));
-  for (let i = 0; i < chairCount; i++) {
-    const cx = tx + 20 + i * Math.round(actualTW / chairCount);
-    furniture.push({ type: 'circle', x: cx, y: ty - 12, r: 10, color: '#1e3a50' });
-    furniture.push({ type: 'circle', x: cx, y: ty + actualTH + 12, r: 10, color: '#1e3a50' });
-  }
-  // Side chairs
-  const sideRows = Math.min(2, Math.floor(actualTH / 40));
-  for (let i = 0; i < sideRows; i++) {
-    const cy = ty + 20 + i * Math.round(actualTH / sideRows);
-    furniture.push({ type: 'circle', x: tx - 12, y: cy, r: 10, color: '#1e3a50' });
-    furniture.push({ type: 'circle', x: tx + actualTW + 12, y: cy, r: 10, color: '#1e3a50' });
-  }
-
-  // Projector screen on north wall — multi-tile (horizontal strip)
-  const screenTiles = Math.max(2, Math.round(actualTW * 0.65 / TILE_W));
-  const screenW = screenTiles * TILE_W;
-  const sx = rx + Math.round((rw - screenW) / 2);
-  furniture.push({
-    type: 'rect', x: sx, y: ry + 6, w: screenW, h: TILE_H, color: '#0a0a1a', label: '📺 Projector',
-    tileSprites: makeSingleRowComposite('interiors', 152, screenTiles),
-  });
-
-  // Whiteboards — 2×3 tile composite
-  furniture.push({
-    type: 'rect', x: rx + 8, y: ry + 8, w: 2 * TILE_W, h: 3 * TILE_H, color: '#f0f0ff',
-    tileSprites: makeTileComposite('interiors', [[648, 648], [648, 648], [648, 648]]),
-  });
-
-  return { furniture, colliders };
-}
-
-function placeLoungeFurniture(
-  rx: number, ry: number, rw: number, rh: number,
-  rng: () => number,
-): FurniturePlacement {
-  const furniture: FurnitureShape[] = [];
-  const colliders: Collider[] = [];
-
-  // Kitchen counter (top) — multi-tile horizontal strip
-  const counterTiles = Math.max(2, Math.floor((rw - 12) / TILE_W));
-  const counterW = counterTiles * TILE_W;
-  furniture.push({
-    type: 'rect', x: rx + 6, y: ry + 6, w: counterW, h: TILE_H, color: '#3a2a10', label: '☕ Kitchen',
-    tileSprites: makeSingleRowComposite('interiors', 161, counterTiles),
-  });
-  colliders.push({ x: rx + 6, y: ry + 6, w: counterW, h: TILE_H });
-
-  // Two sofas — 3×2 tile composite each
-  const sofaTilesW = 3, sofaTilesH = 2;
-  const sofaW = sofaTilesW * TILE_W, sofaH = sofaTilesH * TILE_H;
-  furniture.push({
-    type: 'rect', x: rx + 6, y: ry + 48, w: sofaW, h: sofaH, color: '#5a4820', label: '🛋️ Sofa',
-    tileSprites: makeTileComposite('interiors', [[177, 177, 177], [177, 177, 177]]),
-  });
-  colliders.push({ x: rx + 6, y: ry + 48, w: sofaW, h: sofaH });
-  if (rh > 120) {
-    furniture.push({
-      type: 'rect', x: rx + 6, y: ry + 108, w: sofaW, h: sofaH, color: '#5a4820',
-      tileSprites: makeTileComposite('interiors', [[177, 177, 177], [177, 177, 177]]),
-    });
-    colliders.push({ x: rx + 6, y: ry + 108, w: sofaW, h: sofaH });
-  }
-
-  // Coffee table — 2×2 tile composite
-  furniture.push({
-    type: 'rect', x: rx + sofaW + 16, y: ry + 56, w: 2 * TILE_W, h: 2 * TILE_H, color: '#3a2a08',
-    tileSprites: makeTileComposite('interiors', [[161, 161], [161, 161]]),
-  });
-
-  // TV on south wall — multi-tile horizontal
-  if (rh > 130) {
-    const tvTiles = Math.min(5, Math.floor(rw / TILE_W / 2));
-    const tvW = tvTiles * TILE_W;
-    furniture.push({
-      type: 'rect', x: rx + 6, y: ry + rh - 3 * TILE_H, w: tvW, h: TILE_H, color: '#0a0a1a', label: '📺 TV',
-      tileSprites: makeSingleRowComposite('interiors', 152, tvTiles),
-    });
-  }
-
-  // Plants (native 16×16 tile size)
-  if (rng() > 0.4) {
-    furniture.push({ type: 'rect', x: rx + rw - 22, y: ry + rh - 22, w: TILE_W, h: TILE_H, color: '#1a6a1a', tileSprite: iT(16) });
-  }
-
-  return { furniture, colliders };
-}
-
-function placeEngineeringFurniture(
-  rx: number, ry: number, rw: number, rh: number,
-  rng: () => number,
-): FurniturePlacement {
-  const furniture: FurnitureShape[] = [];
-  const colliders: Collider[] = [];
-  const deskTile = 128;  // _iT(128) engineering desk
-  const monitorTile = furnitureTileId('monitor');
-
-  // Desk: 5 tiles wide × 2 tiles tall
-  const deskTilesW = 5, deskTilesH = 2;
-  const deskW = deskTilesW * TILE_W;
-  const deskH = deskTilesH * TILE_H;
-  const colCount = Math.min(4, Math.floor((rw - 60) / (deskW + 10)));
-  const rowCount = Math.min(2, Math.floor((rh - 80) / (deskH + 20)));
-  const startX = rx + 16;
-  const startY = ry + 16;
-
-  for (let dr = 0; dr < rowCount; dr++) {
-    for (let dc = 0; dc < colCount; dc++) {
-      const x = startX + dc * (deskW + 10);
-      const y = startY + dr * (deskH + 30);
-      if (x + deskW > rx + rw - 60 || y + deskH > ry + rh - 40) continue;
-      furniture.push({
-        type: 'rect', x, y, w: deskW, h: deskH, color: '#1a1030',
-        tileSprites: makeTileComposite(
-          'interiors',
-          [[deskTile, deskTile, deskTile, deskTile, deskTile],
-           [deskTile, deskTile, deskTile, deskTile, deskTile]],
-        ),
-      });
-      furniture.push({
-        type: 'rect', x: x + TILE_W, y: y + 2, w: TILE_W, h: TILE_H, color: '#2a1a4a',
-        tileSprites: makeSingleRowComposite('interiors', monitorTile, 1),
-      });
-      colliders.push({ x, y, w: deskW, h: deskH });
-    }
-  }
-
-  // Server rack on east wall — 2×N tile composite
-  const srX = rx + rw - 2 * TILE_W - 8;
-  const srTilesH = Math.max(2, Math.floor((rh - 30) / TILE_H));
-  const srH = srTilesH * TILE_H;
-  furniture.push({
-    type: 'rect', x: srX, y: ry + 6, w: 2 * TILE_W, h: srH, color: '#0a1a2a', label: '⚙️ Servers',
-    tileSprites: makeTileComposite(
-      'interiors',
-      Array.from({ length: srTilesH }, () => [152, 152]),
-    ),
-  });
-  colliders.push({ x: srX, y: ry + 6, w: 2 * TILE_W, h: srH, label: 'server-rack' });
-
-  // Whiteboards — multi-tile composite
-  if (rng() > 0.3) {
-    const wbTiles = Math.max(2, Math.floor(Math.min(150, rw - 30) / TILE_W));
-    furniture.push({
-      type: 'rect', x: rx + 16, y: ry + rh - 3 * TILE_H, w: wbTiles * TILE_W, h: 3 * TILE_H, color: '#f0f0ff', label: '📐 Architecture',
-      tileSprites: makeTileComposite('interiors', Array.from({ length: 3 }, () => Array(wbTiles).fill(648))),
-    });
-  }
-
-  // Plants (native tile size)
-  if (rng() > 0.5) {
-    furniture.push({ type: 'rect', x: rx + 6, y: ry + 6, w: TILE_W, h: TILE_H, color: '#1a5a1a', tileSprite: iT(1) });
-  }
-
-  return { furniture, colliders };
-}
-
-function placeProductFurniture(
-  rx: number, ry: number, rw: number, rh: number,
-  rng: () => number,
-): FurniturePlacement {
-  const furniture: FurnitureShape[] = [];
-  const colliders: Collider[] = [];
-  const deskTile = furnitureTileId('desk');
-  const monitorTile = furnitureTileId('monitor');
-
-  // Desk: 5 tiles wide × 2 tiles tall
-  const deskTilesW = 5, deskTilesH = 2;
-  const deskW = deskTilesW * TILE_W;
-  const deskH = deskTilesH * TILE_H;
-  const colCount = Math.min(3, Math.floor((rw - 40) / (deskW + 12)));
-  const rowCount = Math.min(2, Math.floor((rh - 100) / (deskH + 20)));
-  const startX = rx + 14;
-  const startY = ry + rh / 2 - rowCount * (deskH + 20) / 2;
-
-  for (let dr = 0; dr < rowCount; dr++) {
-    for (let dc = 0; dc < colCount; dc++) {
-      const x = startX + dc * (deskW + 12);
-      const y = startY + dr * (deskH + 20);
-      if (x + deskW > rx + rw - 14 || y + deskH > ry + rh - 40) continue;
-      furniture.push({
-        type: 'rect', x, y, w: deskW, h: deskH, color: '#20140a',
-        tileSprites: makeTileComposite(
-          'interiors',
-          [[deskTile, deskTile, deskTile, deskTile, deskTile],
-           [deskTile, deskTile, deskTile, deskTile, deskTile]],
-        ),
-      });
-      furniture.push({
-        type: 'rect', x: x + TILE_W, y: y + 2, w: TILE_W, h: TILE_H, color: '#3a2008',
-        tileSprites: makeSingleRowComposite('interiors', monitorTile, 1),
-      });
-      colliders.push({ x, y, w: deskW, h: deskH });
-    }
-  }
-
-  // Kanban boards (south wall) — multi-tile composites
-  const boardTilesW = 5, boardTilesH = 3;
-  const boardW = boardTilesW * TILE_W, boardH = boardTilesH * TILE_H;
-  const boardGap = 8;
-  const boardCount = Math.min(3, Math.floor((rw - 30) / (boardW + boardGap)));
-  for (let i = 0; i < boardCount; i++) {
-    const bx = rx + 10 + i * (boardW + boardGap);
-    const by = ry + rh - boardH - 4;
-    const boardLabel = i === 0 ? '📋 Sprint' : i === 1 ? '📊 Backlog' : null;
-    const boardShape: FurnitureShape = {
-      type: 'rect', x: bx, y: by, w: boardW, h: boardH, color: '#f0f0e0',
-      tileSprites: makeTileComposite('interiors', Array.from({ length: boardTilesH }, () => Array(boardTilesW).fill(648))),
-    };
-    if (boardLabel) boardShape.label = boardLabel;
-    furniture.push(boardShape);
-  }
-  if (boardCount > 0) {
-    colliders.push({ x: rx + 10, y: ry + rh - boardH - 4, w: boardCount * (boardW + boardGap) - boardGap, h: boardH });
-  }
-
-  // Pod table
-  if (rw > 200 && rng() > 0.4) {
-    const podX = rx + rw - 80;
-    const podY = ry + rh / 2 - 20;
-    furniture.push({ type: 'circle', x: podX, y: podY, r: 38, color: '#20140a' });
-    furniture.push({ type: 'circle', x: podX, y: podY - 50, r: 10, color: '#20140a' });
-    furniture.push({ type: 'circle', x: podX + 50, y: podY, r: 10, color: '#20140a' });
-    furniture.push({ type: 'circle', x: podX, y: podY + 50, r: 10, color: '#20140a' });
-    furniture.push({ type: 'circle', x: podX - 50, y: podY, r: 10, color: '#20140a' });
-  }
-
-  // Plants (native tile size)
-  furniture.push({ type: 'rect', x: rx + 6, y: ry + 6, w: TILE_W, h: TILE_H, color: '#1a5a1a', tileSprite: iT(1) });
-
-  return { furniture, colliders };
-}
-
-function placeDesignFurniture(
-  rx: number, ry: number, rw: number, rh: number,
-  rng: () => number,
-): FurniturePlacement {
-  const furniture: FurnitureShape[] = [];
-  const colliders: Collider[] = [];
-  const deskTile = furnitureTileId('desk');
-  const monitorTile = furnitureTileId('monitor');
-
-  // Desk: 5 tiles wide × 2 tiles tall
-  const deskTilesW = 5, deskTilesH = 2;
-  const deskW = deskTilesW * TILE_W;
-  const deskH = deskTilesH * TILE_H;
-  const colCount = Math.min(4, Math.floor((rw - 40) / (deskW + 8)));
-  const startX = rx + 12;
-  const startY = ry + 20;
-
-  for (let dc = 0; dc < colCount; dc++) {
-    const x = startX + dc * (deskW + 8);
-    const y = startY;
-    if (x + deskW > rx + rw - 12) continue;
-    furniture.push({
-      type: 'rect', x, y, w: deskW, h: deskH, color: '#2e0e16',
-      tileSprites: makeTileComposite(
-        'interiors',
-        [[deskTile, deskTile, deskTile, deskTile, deskTile],
-         [deskTile, deskTile, deskTile, deskTile, deskTile]],
-      ),
-    });
-    furniture.push({
-      type: 'rect', x: x + TILE_W, y: y + 2, w: TILE_W, h: TILE_H, color: '#4a1a2a',
-      tileSprites: makeSingleRowComposite('interiors', monitorTile, 1),
-    });
-    colliders.push({ x, y, w: deskW, h: deskH });
-  }
-
-  // Large display wall (east) — 2×N tile composite
-  const dispTilesH = Math.max(2, Math.min(12, Math.floor((rh - 80) / TILE_H)));
-  const dispH = dispTilesH * TILE_H;
-  const dispX = rx + rw - 2 * TILE_W - 8;
-  furniture.push({
-    type: 'rect', x: dispX, y: ry + 50, w: 2 * TILE_W, h: dispH, color: '#1a0010', label: '🎨 Design',
-    tileSprites: makeTileComposite('interiors', Array.from({ length: dispTilesH }, () => [152, 152])),
-  });
-  colliders.push({ x: dispX, y: ry + 50, w: 2 * TILE_W, h: dispH, label: 'large-display' });
-
-  // Drawing boards (south) — multi-tile composites
-  const boardTilesW = 5, boardTilesH = 4;
-  const boardW = boardTilesW * TILE_W, boardH = boardTilesH * TILE_H;
-  const boardGap = 8;
-  const boardCount = Math.min(3, Math.floor((rw - 80) / (boardW + boardGap)));
-  for (let i = 0; i < boardCount; i++) {
-    const bx = rx + 6 + i * (boardW + boardGap);
-    const by = ry + rh - boardH - 4;
-    const boardLabel = i === 0 ? '✏️ Sketches' : i === 1 ? '🖌️ Design' : null;
-    const boardShape: FurnitureShape = {
-      type: 'rect', x: bx, y: by, w: boardW, h: boardH, color: '#f0f0e8',
-      tileSprites: makeTileComposite('interiors', Array.from({ length: boardTilesH }, () => Array(boardTilesW).fill(648))),
-    };
-    if (boardLabel) boardShape.label = boardLabel;
-    furniture.push(boardShape);
-  }
-  if (boardCount > 0) {
-    colliders.push({ x: rx + 6, y: ry + rh - boardH - 4, w: boardCount * (boardW + boardGap) - boardGap, h: boardH });
-  }
-
-  // Plants (native tile size)
-  if (rng() > 0.4) {
-    furniture.push({ type: 'rect', x: rx + 6, y: ry + rh - TILE_H - 4, w: TILE_W, h: TILE_H, color: '#1a6a1a', tileSprite: iT(16) });
-  }
-
-  return { furniture, colliders };
-}
-
-function placeFurnitureForPurpose(
-  purpose: RoomTemplate['purpose'],
-  rx: number, ry: number, rw: number, rh: number,
-  rng: () => number,
-): FurniturePlacement {
-  switch (purpose) {
-    case 'office':      return placeOfficeFurniture(rx, ry, rw, rh, rng);
-    case 'meeting':     return placeMeetingFurniture(rx, ry, rw, rh, rng);
-    case 'lounge':      return placeLoungeFurniture(rx, ry, rw, rh, rng);
-    case 'engineering': return placeEngineeringFurniture(rx, ry, rw, rh, rng);
-    case 'product':     return placeProductFurniture(rx, ry, rw, rh, rng);
-    case 'design':      return placeDesignFurniture(rx, ry, rw, rh, rng);
-    default: return { furniture: [], colliders: [] };
-  }
-}
-
-// ── Wall drawing helpers ──────────────────────────────────────────────────────
+// ── Wall drawing helper ───────────────────────────────────────────────────────
 
 /**
  * Draw a rectangular room's walls into the wallData array.
  * wallX/wallY/wallW/wallH are the full tile bounds (including the 1-tile border).
- * doorGaps: set of tile indices (world-relative col or row) where walls are omitted.
  */
 function drawRoomWalls(
   wallData: number[],
@@ -728,7 +296,6 @@ function drawRoomWalls(
       const isLeft   = c === wallX;
       const isRight  = c === x2;
 
-      // Is this tile in a door gap?
       if ((isTop || isBottom) && doorCols.has(c)) continue;
       if ((isLeft || isRight) && doorRows.has(r)) continue;
 
@@ -741,439 +308,212 @@ function drawRoomWalls(
       else if (isBottom)            tile = bottom;
       else if (isLeft)              tile = left;
       else if (isRight)             tile = right;
-      else continue; // interior — skip
+      else continue;
 
       wallData[idx] = tile;
     }
   }
 }
 
-// ── Layout algorithm ──────────────────────────────────────────────────────────
+// ── Single-room furniture placement ──────────────────────────────────────────
 
-/** Generate a door gap set of tile column/row indices for a given wall segment */
-function makeDoorGap(
-  wallPos: number,       // the tile col/row of the wall
-  wallStart: number,     // start tile of the wall segment (interior side)
-  wallEnd: number,       // end tile of the wall segment (interior side)
-  doorSize: number,      // number of tiles wide/tall (default 4)
-  rng: () => number,
-): Set<number> {
-  const gap = new Set<number>();
-  // Place door roughly in the centre of the wall segment with slight random offset
-  const rangeLen = wallEnd - wallStart - doorSize;
-  if (rangeLen < 1) return gap; // wall too small for door
-  const offset = Math.floor(rng() * rangeLen);
-  const start = wallStart + offset;
-  for (let i = 0; i < doorSize; i++) {
-    gap.add(start + i);
+interface BigRoomPlacement {
+  furniture:          FurnitureShape[];
+  colliders:          Collider[];
+  interactiveObjects: InteractiveObject[];
+}
+
+/**
+ * Place furniture and interactive objects for the single big central room.
+ *
+ * Clear zone: x ∈ [240, 1040], y ∈ [160, 560].
+ * All colliders sit outside this zone so the centre spawn point at
+ * (WORLD_WIDTH/2, WORLD_HEIGHT/2) = (640, 360) is always collision-free.
+ */
+function placeBigRoomFurniture(rng: () => number): BigRoomPlacement {
+  const furniture:          FurnitureShape[]   = [];
+  const colliders:          Collider[]          = [];
+  const interactiveObjects: InteractiveObject[] = [];
+
+  const deskTile    = furnitureTileId('desk');    // 161
+  const monitorTile = furnitureTileId('monitor'); // 136
+
+  // ── North wall: 6 workstation desks (y = 32–64) ───────────────────────────
+  // All desks sit at y = 32, well below the y = 160 clear-zone boundary.
+  const deskW = 5 * TILE_W;  // 80 px
+  const deskH = 2 * TILE_H;  // 32 px
+  const deskY = 2 * TILE_H;  // y = 32 px  (row 2)
+  for (const dx of [80, 272, 464, 656, 848, 1040]) {
+    furniture.push({
+      type: 'rect', x: dx, y: deskY, w: deskW, h: deskH, color: '#1c2a3a',
+      tileSprites: makeTileComposite('interiors', [
+        [deskTile, deskTile, deskTile, deskTile, deskTile],
+        [deskTile, deskTile, deskTile, deskTile, deskTile],
+      ]),
+    });
+    furniture.push({
+      type: 'rect', x: dx + TILE_W, y: deskY + 4, w: TILE_W, h: TILE_H, color: '#1a3a6a',
+      tileSprites: makeSingleRowComposite('interiors', monitorTile, 1),
+    });
+    colliders.push({ x: dx, y: deskY, w: deskW, h: deskH });
   }
-  void wallPos; // wallPos used by caller to select which gap set applies
-  return gap;
+  interactiveObjects.push({ x: 560, y: deskY + deskH + 30, r: 60, label: '💻 Open workspace' });
+
+  // ── West wall: whiteboard (x = 32–80, y = 256–304) ───────────────────────
+  // x = 32 < 240 clear-zone boundary ✓
+  const wbX = 2 * TILE_W, wbY = 16 * TILE_H, wbW = 3 * TILE_W, wbH = 3 * TILE_H;
+  furniture.push({
+    type: 'rect', x: wbX, y: wbY, w: wbW, h: wbH, color: '#f0f0ff', label: '📋 Whiteboard',
+    tileSprites: makeTileComposite('interiors', Array.from({ length: 3 }, () => [648, 648, 648])),
+  });
+  colliders.push({ x: wbX, y: wbY, w: wbW, h: wbH });
+  interactiveObjects.push({ x: wbX + wbW + 35, y: wbY + wbH / 2, r: 50, label: '📋 Whiteboard' });
+
+  // ── East wall: server rack (x = 1232–1264, y = 48–240) ───────────────────
+  // x = 1232 > 1040 clear-zone boundary ✓
+  const srX     = WORLD_WIDTH - 3 * TILE_W;  // 1232 px
+  const srTilesH = 12;
+  const srH     = srTilesH * TILE_H;          // 192 px
+  const srY     = 3 * TILE_H;                 // y = 48
+  furniture.push({
+    type: 'rect', x: srX, y: srY, w: 2 * TILE_W, h: srH, color: '#0a1a2a', label: '⚙️ Servers',
+    tileSprites: makeTileComposite('interiors', Array.from({ length: srTilesH }, () => [152, 152])),
+  });
+  colliders.push({ x: srX, y: srY, w: 2 * TILE_W, h: srH, label: 'server-rack' });
+  interactiveObjects.push({ x: srX - 40, y: srY + srH / 2, r: 50, label: '⚙️ Server rack' });
+
+  // ── South wall: lounge area (y ≥ 592) ────────────────────────────────────
+  // All south furniture sits at y ≥ 592 > 560 clear-zone boundary ✓
+  const sofaY    = WORLD_HEIGHT - 5 * TILE_H;  // y = 640
+  const sofaRows = [[177, 177, 177, 177, 177, 177], [177, 177, 177, 177, 177, 177]];
+  // Left sofa
+  furniture.push({
+    type: 'rect', x: 6 * TILE_W, y: sofaY, w: 6 * TILE_W, h: 2 * TILE_H, color: '#5a4820', label: '🛋️ Sofa',
+    tileSprites: makeTileComposite('interiors', sofaRows),
+  });
+  colliders.push({ x: 6 * TILE_W, y: sofaY, w: 6 * TILE_W, h: 2 * TILE_H });
+  // Coffee table
+  furniture.push({
+    type: 'rect', x: 14 * TILE_W, y: sofaY + 8, w: 3 * TILE_W, h: 2 * TILE_H, color: '#3a2a08',
+    tileSprites: makeSingleRowComposite('interiors', 161, 3),
+  });
+  // Right sofa
+  furniture.push({
+    type: 'rect', x: 19 * TILE_W, y: sofaY, w: 6 * TILE_W, h: 2 * TILE_H, color: '#5a4820',
+    tileSprites: makeTileComposite('interiors', sofaRows),
+  });
+  colliders.push({ x: 19 * TILE_W, y: sofaY, w: 6 * TILE_W, h: 2 * TILE_H });
+  interactiveObjects.push({ x: 16 * TILE_W, y: sofaY - 20, r: 55, label: '🛋️ Lounge area' });
+
+  // TV on south wall
+  const tvW = 8 * TILE_W, tvH = 2 * TILE_H;
+  const tvX = WORLD_WIDTH / 2 - tvW / 2;   // centred horizontally
+  const tvY = WORLD_HEIGHT - tvH - TILE_H;  // y = 672
+  furniture.push({
+    type: 'rect', x: tvX, y: tvY, w: tvW, h: tvH, color: '#0a0a1a', label: '📺 TV',
+    tileSprites: makeTileComposite('interiors', Array.from({ length: 2 }, () => Array(8).fill(152))),
+  });
+  colliders.push({ x: tvX, y: tvY, w: tvW, h: tvH });
+  interactiveObjects.push({ x: tvX + tvW / 2, y: tvY - 20, r: 55, label: '📺 Chill zone' });
+
+  // ── Corner plants ─────────────────────────────────────────────────────────
+  furniture.push({ type: 'rect', x: 2 * TILE_W,             y: 2 * TILE_H,             w: TILE_W, h: TILE_H, color: '#1a6a1a', tileSprite: iT(16) });
+  furniture.push({ type: 'rect', x: WORLD_WIDTH - 3 * TILE_W, y: 2 * TILE_H,             w: TILE_W, h: TILE_H, color: '#1a5a1a', tileSprite: iT(1)  });
+  furniture.push({ type: 'rect', x: 2 * TILE_W,             y: WORLD_HEIGHT - 3 * TILE_H, w: TILE_W, h: TILE_H, color: '#1a5a1a', tileSprite: iT(1)  });
+  furniture.push({ type: 'rect', x: WORLD_WIDTH - 3 * TILE_W, y: WORLD_HEIGHT - 3 * TILE_H, w: TILE_W, h: TILE_H, color: '#1a6a1a', tileSprite: iT(16) });
+
+  // Optional mid-wall plants (seeded)
+  if (rng() > 0.3) {
+    furniture.push({ type: 'rect', x: 2 * TILE_W, y: 28 * TILE_H,             w: TILE_W, h: TILE_H, color: '#1a6a1a', tileSprite: iT(16) });
+  }
+  if (rng() > 0.3) {
+    furniture.push({ type: 'rect', x: WORLD_WIDTH - 3 * TILE_W, y: 28 * TILE_H, w: TILE_W, h: TILE_H, color: '#1a5a1a', tileSprite: iT(1)  });
+  }
+
+  return { furniture, colliders, interactiveObjects };
 }
 
 // ── Main generation function ──────────────────────────────────────────────────
 
 /**
- * Generate a complete GameMap with procedural rooms.
- * @param seed - Deterministic seed (default: 0)
- * @param templates - Room templates for each of the 6 grid cells (top-left → bottom-right)
+ * Generate a GameMap with a single large open central room.
+ *
+ * The room fills the entire world interior (outer walls only, no partitions).
+ * Furniture is placed along the walls, leaving the centre open.
+ * `spawnPoint` is the geometric centre and is guaranteed clear of all colliders.
+ *
+ * @param seed - Deterministic seed; same seed always produces the same map.
+ * @param room - Optional partial RoomTemplate to override the floor theme,
+ *               zone name, and zone colour.
  */
-export function generateMap(seed = 0, templates: RoomTemplate[] = DEFAULT_TEMPLATES): GameMap {
+export function generateMap(seed = 0, room?: Partial<RoomTemplate>): GameMap {
   const rng = createRng(seed);
 
-  // ── Layout dimensions (mirrors current static map) ────────────────────────
-  // The world is 80×45 tiles.
-  // 2-row × 3-column grid with a 2-tile corridor between rows.
-  // Outer border: 1 tile on each side.
-  // Vertical partitions at configurable columns.
-  // Horizontal corridor at configurable rows.
-  //
-  // We randomise the column widths and row heights within the template ranges.
+  // ── Room configuration ────────────────────────────────────────────────────
+  const FLOOR_THEMES: FloorTheme[] = ['office', 'tan', 'teal', 'wood', 'beige', 'stone'];
+  const floorTheme: FloorTheme =
+    room?.floorTheme ?? FLOOR_THEMES[Math.floor(rng() * FLOOR_THEMES.length)]!;
+  const zoneName  = room?.name      ?? 'Main Hall';
+  const zoneColor = room?.zoneColor ?? 'rgba(52,152,219,0.05)';
 
-  const tmpl = [...templates];
-  while (tmpl.length < 6) tmpl.push(DEFAULT_TEMPLATES[tmpl.length % DEFAULT_TEMPLATES.length]!);
-
-  // Column widths (3 columns). Must sum to MAP_COLS - 2 (outer walls).
-  const innerCols = MAP_COLS - 2;  // 78
-
-  // Pick widths for col 0 and col 1 based on template min/max, remainder goes to col 2
-  const c0W = clampRandom(rng, tmpl[0]!.minWidth,  tmpl[0]!.maxWidth,  14, innerCols - 40);
-  const c1W = clampRandom(rng, tmpl[1]!.minWidth,  tmpl[1]!.maxWidth,  20, innerCols - c0W - 20);
-  const c2W = innerCols - c0W - c1W;
-
-  // Row heights (2 rows) plus 2-tile corridor
-  const corridorH = 2;
-  const innerRows = MAP_ROWS - 2 - corridorH; // 41
-  const r0H = clampRandom(rng, tmpl[0]!.minHeight, tmpl[0]!.maxHeight, 12, innerRows - 16);
-  const r1H = innerRows - r0H;
-
-  // Tile grid positions
-  const col0X = 1;
-  const col1X = col0X + c0W;
-  const col2X = col1X + c1W;
-  const row0Y = 1;
-  const corridorY = row0Y + r0H;
-  const row1Y = corridorY + corridorH;
-
-  // ── Door gaps ─────────────────────────────────────────────────────────────
-  // Horizontal walls (top corridor border at corridorY, bottom at corridorY+corridorH-1+1)
-  // Vertical walls at col1X and col2X
-  const DOOR_SIZE = 4;
-
-  // Vertical wall 1 (at col1X): door rows in top zone and bottom zone
-  const dvT1 = makeDoorGap(col1X, row0Y + 1, row0Y + r0H - 1, DOOR_SIZE, rng);
-  const dvB1 = makeDoorGap(col1X, row1Y + 1, row1Y + r1H - 1, DOOR_SIZE, rng);
-
-  // Vertical wall 2 (at col2X): same
-  const dvT2 = makeDoorGap(col2X, row0Y + 1, row0Y + r0H - 1, DOOR_SIZE, rng);
-  const dvB2 = makeDoorGap(col2X, row1Y + 1, row1Y + r1H - 1, DOOR_SIZE, rng);
-
-  // Horizontal wall top (at corridorY): door cols per column
-  const dhL_top = makeDoorGap(corridorY, col0X + 1, col0X + c0W - 1, DOOR_SIZE, rng);
-  const dhM_top = makeDoorGap(corridorY, col1X + 1, col1X + c1W - 1, DOOR_SIZE, rng);
-  const dhR_top = makeDoorGap(corridorY, col2X + 1, col2X + c2W - 1, DOOR_SIZE, rng);
-
-  // Horizontal wall bottom (at row1Y-1):
-  const dhL_bot = makeDoorGap(row1Y - 1, col0X + 1, col0X + c0W - 1, DOOR_SIZE, rng);
-  const dhM_bot = makeDoorGap(row1Y - 1, col1X + 1, col1X + c1W - 1, DOOR_SIZE, rng);
-  const dhR_bot = makeDoorGap(row1Y - 1, col2X + 1, col2X + c2W - 1, DOOR_SIZE, rng);
-
-  // ── Initialise tile data arrays ───────────────────────────────────────────
+  // ── Tile data ─────────────────────────────────────────────────────────────
   const size = MAP_COLS * MAP_ROWS;
   const floorData = new Array<number>(size).fill(-1);
   const wallData  = new Array<number>(size).fill(-1);
 
-  // ── Fill floor tiles ──────────────────────────────────────────────────────
-
-  // Helper: fill rect with floor
-  function fillFloor(x: number, y: number, w: number, h: number, theme: FloorTheme) {
-    for (let r = y; r < y + h; r++) {
-      for (let c = x; c < x + w; c++) {
-        if (c < 0 || c >= MAP_COLS || r < 0 || r >= MAP_ROWS) continue;
-        floorData[r * MAP_COLS + c] = fillFloorForTheme(c, r, theme);
-      }
+  // Fill interior floor (cols 1–78, rows 1–43)
+  for (let r = 1; r < MAP_ROWS - 1; r++) {
+    for (let c = 1; c < MAP_COLS - 1; c++) {
+      floorData[r * MAP_COLS + c] = fillFloorForTheme(c, r, floorTheme);
     }
   }
 
-  // Top row rooms
-  fillFloor(col0X, row0Y, c0W, r0H, tmpl[0]!.floorTheme);
-  fillFloor(col1X, row0Y, c1W, r0H, tmpl[1]!.floorTheme);
-  fillFloor(col2X, row0Y, c2W, r0H, tmpl[2]!.floorTheme);
-  // Corridor
-  fillFloor(col0X, corridorY, innerCols, corridorH, 'stone');
-  // Bottom row rooms
-  fillFloor(col0X, row1Y, c0W, r1H, tmpl[3]!.floorTheme);
-  fillFloor(col1X, row1Y, c1W, r1H, tmpl[4]!.floorTheme);
-  fillFloor(col2X, row1Y, c2W, r1H, tmpl[5]!.floorTheme);
+  // 1-tile perimeter border ring with alternate shade
+  fillFloorBorder(floorData, 1, 1, MAP_COLS - 2, MAP_ROWS - 2, floorTheme);
 
-  // Corridor stone floor for each tile
-  for (let r = corridorY; r < corridorY + corridorH; r++) {
-    for (let c = col0X; c < col0X + innerCols; c++) {
-      if (c < 0 || c >= MAP_COLS || r < 0 || r >= MAP_ROWS) continue;
-      floorData[r * MAP_COLS + c] = corridorFloor(c, r);
-    }
-  }
-
-  // ── Room interior border rings (1-tile perimeter, alternate shade) ─────────
-  fillFloorBorder(floorData, col0X, row0Y, c0W, r0H, tmpl[0]!.floorTheme);
-  fillFloorBorder(floorData, col1X, row0Y, c1W, r0H, tmpl[1]!.floorTheme);
-  fillFloorBorder(floorData, col2X, row0Y, c2W, r0H, tmpl[2]!.floorTheme);
-  fillFloorBorder(floorData, col0X, row1Y, c0W, r1H, tmpl[3]!.floorTheme);
-  fillFloorBorder(floorData, col1X, row1Y, c1W, r1H, tmpl[4]!.floorTheme);
-  fillFloorBorder(floorData, col2X, row1Y, c2W, r1H, tmpl[5]!.floorTheme);
-
-  // ── Lounge centre rug — warm beige/tan accent on wood floor ───────────────
-  if (tmpl[3]!.purpose === 'lounge' && c0W > 8 && r1H > 10) {
-    const rugX = col0X + Math.floor(c0W * 0.28);
-    const rugY = row1Y + Math.floor(r1H * 0.30);
-    const rugW = Math.max(4, Math.floor(c0W * 0.50));
-    const rugH = Math.max(4, Math.floor(r1H * 0.38));
-    fillFloorRect(floorData, rugX, rugY, rugW, rugH, 'beige');
-    fillFloorBorder(floorData, rugX, rugY, rugW, rugH, 'tan');
-  }
-
-  // ── Meeting room carpet — contrasting underlay beneath conference table ────
-  if (tmpl[1]!.purpose === 'meeting' && c1W > 8 && r0H > 6) {
-    const carpetX = col1X + Math.floor(c1W * 0.22);
-    const carpetY = row0Y + Math.floor(r0H * 0.22);
-    const carpetW = Math.max(4, Math.floor(c1W * 0.56));
-    const carpetH = Math.max(3, Math.floor(r0H * 0.54));
-    fillFloorRect(floorData, carpetX, carpetY, carpetW, carpetH, 'beige');
-    fillFloorBorder(floorData, carpetX, carpetY, carpetW, carpetH, 'tan');
-  }
-
-  // ── Outer border walls ────────────────────────────────────────────────────
-  // Draw full outer border
+  // Outer boundary walls
   drawRoomWalls(wallData, 0, 0, MAP_COLS, MAP_ROWS, new Set(), new Set());
 
-  // ── Internal walls ────────────────────────────────────────────────────────
-
-  // Vertical wall at col1X (between room 0/1 and room 3/4)
-  // Top zone segment
-  for (let r = row0Y; r < row0Y + r0H; r++) {
-    if (dvT1.has(r)) continue;
-    wallData[r * MAP_COLS + col1X] = WALL_RIGHT;
-  }
-  // Bottom zone segment
-  for (let r = row1Y; r < row1Y + r1H; r++) {
-    if (dvB1.has(r)) continue;
-    wallData[r * MAP_COLS + col1X] = WALL_RIGHT;
-  }
-
-  // Vertical wall at col2X
-  for (let r = row0Y; r < row0Y + r0H; r++) {
-    if (dvT2.has(r)) continue;
-    wallData[r * MAP_COLS + col2X] = WALL_RIGHT;
-  }
-  for (let r = row1Y; r < row1Y + r1H; r++) {
-    if (dvB2.has(r)) continue;
-    wallData[r * MAP_COLS + col2X] = WALL_RIGHT;
-  }
-
-  // Horizontal wall at corridorY (top of corridor) — south-facing (bottom of top rooms)
-  for (let c = col0X; c < col0X + c0W; c++) {
-    if (dhL_top.has(c)) continue;
-    wallData[corridorY * MAP_COLS + c] = WALL_BOTTOM;
-  }
-  for (let c = col1X; c < col1X + c1W; c++) {
-    if (dhM_top.has(c)) continue;
-    wallData[corridorY * MAP_COLS + c] = WALL_BOTTOM;
-  }
-  for (let c = col2X; c < col2X + c2W; c++) {
-    if (dhR_top.has(c)) continue;
-    wallData[corridorY * MAP_COLS + c] = WALL_BOTTOM;
-  }
-
-  // Horizontal wall at row1Y-1 (bottom of corridor) — north-facing (top of bottom rooms)
-  const corrBotY = row1Y - 1;
-  for (let c = col0X; c < col0X + c0W; c++) {
-    if (dhL_bot.has(c)) continue;
-    wallData[corrBotY * MAP_COLS + c] = WALL_TOP;
-  }
-  for (let c = col1X; c < col1X + c1W; c++) {
-    if (dhM_bot.has(c)) continue;
-    wallData[corrBotY * MAP_COLS + c] = WALL_TOP;
-  }
-  for (let c = col2X; c < col2X + c2W; c++) {
-    if (dhR_bot.has(c)) continue;
-    wallData[corrBotY * MAP_COLS + c] = WALL_TOP;
-  }
-
-  // ── Colliders ─────────────────────────────────────────────────────────────
-  const allColliders: Collider[] = [];
-
-  // Outer walls
-  allColliders.push({ x: 0, y: 0, w: WORLD_WIDTH, h: TILE_H, label: 'outer-top' });
-  allColliders.push({ x: 0, y: WORLD_HEIGHT - TILE_H, w: WORLD_WIDTH, h: TILE_H, label: 'outer-bottom' });
-  allColliders.push({ x: 0, y: 0, w: TILE_W, h: WORLD_HEIGHT, label: 'outer-left' });
-  allColliders.push({ x: WORLD_WIDTH - TILE_W, y: 0, w: TILE_W, h: WORLD_HEIGHT, label: 'outer-right' });
-
-  // Vertical wall colliders (with door gaps)
-  addVerticalWallColliders(allColliders, col1X, row0Y, row0Y + r0H - 1, dvT1, 'vw1-t');
-  addVerticalWallColliders(allColliders, col1X, row1Y, row1Y + r1H - 1, dvB1, 'vw1-b');
-  addVerticalWallColliders(allColliders, col2X, row0Y, row0Y + r0H - 1, dvT2, 'vw2-t');
-  addVerticalWallColliders(allColliders, col2X, row1Y, row1Y + r1H - 1, dvB2, 'vw2-b');
-
-  // Horizontal wall colliders (top corridor border)
-  addHorizontalWallColliders(allColliders, corridorY, col0X, col0X + c0W - 1, dhL_top, 'cw-t-l');
-  addHorizontalWallColliders(allColliders, corridorY, col1X, col1X + c1W - 1, dhM_top, 'cw-t-m');
-  addHorizontalWallColliders(allColliders, corridorY, col2X, col2X + c2W - 1, dhR_top, 'cw-t-r');
-
-  // Horizontal wall colliders (bottom corridor border)
-  addHorizontalWallColliders(allColliders, corrBotY, col0X, col0X + c0W - 1, dhL_bot, 'cw-b-l');
-  addHorizontalWallColliders(allColliders, corrBotY, col1X, col1X + c1W - 1, dhM_bot, 'cw-b-m');
-  addHorizontalWallColliders(allColliders, corrBotY, col2X, col2X + c2W - 1, dhR_bot, 'cw-b-r');
-
-  // ── Zones ─────────────────────────────────────────────────────────────────
-  const zones: Zone[] = [
-    makeZone(col0X, row0Y, c0W, r0H, tmpl[0]!),
-    makeZone(col1X, row0Y, c1W, r0H, tmpl[1]!),
-    makeZone(col2X, row0Y, c2W, r0H, tmpl[2]!),
-    makeZone(col0X, row1Y, c0W, r1H, tmpl[3]!),
-    makeZone(col1X, row1Y, c1W, r1H, tmpl[4]!),
-    makeZone(col2X, row1Y, c2W, r1H, tmpl[5]!),
+  // ── Outer-wall colliders ─────────────────────────────────────────────────
+  const allColliders: Collider[] = [
+    { x: 0,                    y: 0,                     w: WORLD_WIDTH, h: TILE_H,       label: 'outer-top'    },
+    { x: 0,                    y: WORLD_HEIGHT - TILE_H, w: WORLD_WIDTH, h: TILE_H,       label: 'outer-bottom' },
+    { x: 0,                    y: 0,                     w: TILE_W,      h: WORLD_HEIGHT, label: 'outer-left'   },
+    { x: WORLD_WIDTH - TILE_W, y: 0,                     w: TILE_W,      h: WORLD_HEIGHT, label: 'outer-right'  },
   ];
 
-  // ── Furniture ─────────────────────────────────────────────────────────────
-  const allFurniture: FurnitureShape[] = [];
+  // ── Furniture + interactive objects ──────────────────────────────────────
+  const { furniture: allFurniture, colliders: furnColliders, interactiveObjects } =
+    placeBigRoomFurniture(rng);
+  allColliders.push(...furnColliders);
 
-  function addRoomFurniture(gridX: number, gridY: number, gridW: number, gridH: number, t: RoomTemplate) {
-    // Convert tile coords to pixel coords (interior only, inside walls)
-    const rx = gridX * TILE_W + TILE_W;      // one tile inside
-    const ry = gridY * TILE_H + TILE_H;
-    const rw = (gridW - 2) * TILE_W;
-    const rh = (gridH - 2) * TILE_H;
-    if (rw <= 0 || rh <= 0) return;
-    const placed = placeFurnitureForPurpose(t.purpose, rx, ry, rw, rh, rng);
-    allFurniture.push(...placed.furniture);
-    allColliders.push(...placed.colliders);
-  }
-
-  addRoomFurniture(col0X, row0Y, c0W, r0H, tmpl[0]!);
-  addRoomFurniture(col1X, row0Y, c1W, r0H, tmpl[1]!);
-  addRoomFurniture(col2X, row0Y, c2W, r0H, tmpl[2]!);
-  addRoomFurniture(col0X, row1Y, c0W, r1H, tmpl[3]!);
-  addRoomFurniture(col1X, row1Y, c1W, r1H, tmpl[4]!);
-  addRoomFurniture(col2X, row1Y, c2W, r1H, tmpl[5]!);
-
-  // Apply furnitureOverrides per template
-  const roomGrids = [
-    { t: tmpl[0]!, gx: col0X, gy: row0Y },
-    { t: tmpl[1]!, gx: col1X, gy: row0Y },
-    { t: tmpl[2]!, gx: col2X, gy: row0Y },
-    { t: tmpl[3]!, gx: col0X, gy: row1Y },
-    { t: tmpl[4]!, gx: col1X, gy: row1Y },
-    { t: tmpl[5]!, gx: col2X, gy: row1Y },
-  ];
-  for (const { t } of roomGrids) {
-    if (t.furnitureOverrides) {
-      allFurniture.push(...t.furnitureOverrides);
-    }
-  }
-
-  // Apply tileOverrides per template (overwrite floor or wall data at specific cells)
-  const roomTileBounds = [
-    { t: tmpl[0]!, x: col0X, y: row0Y, w: c0W, h: r0H },
-    { t: tmpl[1]!, x: col1X, y: row0Y, w: c1W, h: r0H },
-    { t: tmpl[2]!, x: col2X, y: row0Y, w: c2W, h: r0H },
-    { t: tmpl[3]!, x: col0X, y: row1Y, w: c0W, h: r1H },
-    { t: tmpl[4]!, x: col1X, y: row1Y, w: c1W, h: r1H },
-    { t: tmpl[5]!, x: col2X, y: row1Y, w: c2W, h: r1H },
-  ];
-  for (const { t, x: bx, y: by } of roomTileBounds) {
-    if (t.tileOverrides) {
-      for (const ov of t.tileOverrides) {
-        const tc = bx + ov.col;
-        const tr = by + ov.row;
-        if (tc >= 0 && tc < MAP_COLS && tr >= 0 && tr < MAP_ROWS) {
-          floorData[tr * MAP_COLS + tc] = ov.tileId;
-        }
-      }
-    }
-  }
-
-  // Corridor decorations
-  const corrPx = corridorY * TILE_H;
-  allFurniture.push({ type: 'rect', x: (col0X + c0W - 3) * TILE_W, y: corrPx + 2, w: 24, h: 24, color: '#2a3a4a', tileSprite: iT(161) });
-  allFurniture.push({ type: 'rect', x: (col1X + c1W / 2 | 0) * TILE_W, y: corrPx + 2, w: 20, h: 20, color: '#1a5a1a', tileSprite: iT(1) });
-
-  // ── Assemble TileLayers ───────────────────────────────────────────────────
+  // ── Tile layers ──────────────────────────────────────────────────────────
   const floorLayer: TileLayer = {
-    sheet:   'room-builder',
-    mapCols: MAP_COLS,
-    mapRows: MAP_ROWS,
-    tileW:   TILE_W,
-    tileH:   TILE_H,
-    data:    floorData,
-    offsetX: 0,
-    offsetY: 0,
-    z:       0,
-    alpha:   0.9,
+    sheet: 'room-builder', mapCols: MAP_COLS, mapRows: MAP_ROWS,
+    tileW: TILE_W, tileH: TILE_H, data: floorData,
+    offsetX: 0, offsetY: 0, z: 0, alpha: 0.9,
   };
-
   const wallLayer: TileLayer = {
-    sheet:   'room-builder',
-    mapCols: MAP_COLS,
-    mapRows: MAP_ROWS,
-    tileW:   TILE_W,
-    tileH:   TILE_H,
-    data:    wallData,
-    offsetX: 0,
-    offsetY: 0,
-    z:       1,
-    alpha:   1.0,
+    sheet: 'room-builder', mapCols: MAP_COLS, mapRows: MAP_ROWS,
+    tileW: TILE_W, tileH: TILE_H, data: wallData,
+    offsetX: 0, offsetY: 0, z: 1, alpha: 1.0,
   };
 
   return {
     worldWidth:  WORLD_WIDTH,
     worldHeight: WORLD_HEIGHT,
-    zones,
-    colliders:   allColliders,
-    furniture:   allFurniture,
-    tiles:       [floorLayer, wallLayer],
+    zones: [{
+      x: TILE_W,
+      y: TILE_H,
+      w: WORLD_WIDTH  - 2 * TILE_W,
+      h: WORLD_HEIGHT - 2 * TILE_H,
+      label: zoneName,
+      color: zoneColor,
+    }],
+    colliders:          allColliders,
+    furniture:          allFurniture,
+    tiles:              [floorLayer, wallLayer],
+    spawnPoint:         { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2 },
+    interactiveObjects,
   };
 }
-
-// ── Utility helpers ───────────────────────────────────────────────────────────
-
-function clampRandom(rng: () => number, min: number, max: number, hardMin: number, hardMax: number): number {
-  const lo = Math.max(min, hardMin);
-  const hi = Math.min(max, hardMax);
-  if (lo >= hi) return lo;
-  return lo + Math.floor(rng() * (hi - lo + 1));
-}
-
-function makeZone(gridX: number, gridY: number, gridW: number, gridH: number, tmpl: RoomTemplate): Zone {
-  return {
-    x: gridX * TILE_W,
-    y: gridY * TILE_H,
-    w: gridW * TILE_W,
-    h: gridH * TILE_H,
-    label: tmpl.name,
-    color: tmpl.zoneColor,
-  };
-}
-
-/**
- * Add AABB colliders for a vertical wall segment, splitting around door gaps.
- * tileCol: the tile column of the wall
- * rowStart/rowEnd: inclusive tile row range (world coords)
- * gapRows: set of tile rows that are open (doorway)
- */
-function addVerticalWallColliders(
-  colliders: Collider[],
-  tileCol: number,
-  rowStart: number,
-  rowEnd: number,
-  gapRows: Set<number>,
-  label: string,
-): void {
-  const px = tileCol * TILE_W;
-  let segStart = -1;
-  for (let r = rowStart; r <= rowEnd + 1; r++) {
-    const isGap = gapRows.has(r) || r > rowEnd;
-    if (!isGap && segStart === -1) {
-      segStart = r;
-    } else if (isGap && segStart !== -1) {
-      colliders.push({
-        x: px,
-        y: segStart * TILE_H,
-        w: TILE_W,
-        h: (r - segStart) * TILE_H,
-        label: `${label}-seg`,
-      });
-      segStart = -1;
-    }
-  }
-}
-
-/**
- * Add AABB colliders for a horizontal wall segment, splitting around door gaps.
- */
-function addHorizontalWallColliders(
-  colliders: Collider[],
-  tileRow: number,
-  colStart: number,
-  colEnd: number,
-  gapCols: Set<number>,
-  label: string,
-): void {
-  const py = tileRow * TILE_H;
-  let segStart = -1;
-  for (let c = colStart; c <= colEnd + 1; c++) {
-    const isGap = gapCols.has(c) || c > colEnd;
-    if (!isGap && segStart === -1) {
-      segStart = c;
-    } else if (isGap && segStart !== -1) {
-      colliders.push({
-        x: segStart * TILE_W,
-        y: py,
-        w: (c - segStart) * TILE_W,
-        h: TILE_H,
-        label: `${label}-seg`,
-      });
-      segStart = -1;
-    }
-  }
-}
-

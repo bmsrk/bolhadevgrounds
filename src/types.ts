@@ -156,12 +156,16 @@ export interface TileLayer {
 }
 
 export interface GameMap {
-  worldWidth:  number;
-  worldHeight: number;
-  zones:       Zone[];
-  colliders:   Collider[];
-  furniture:   FurnitureShape[];
-  tiles:       TileLayer[];
+  worldWidth:         number;
+  worldHeight:        number;
+  zones:              Zone[];
+  colliders:          Collider[];
+  furniture:          FurnitureShape[];
+  tiles:              TileLayer[];
+  /** Safe player spawn position — guaranteed clear of all colliders. */
+  spawnPoint:         { x: number; y: number };
+  /** Proximity-interactive objects placed in this map. */
+  interactiveObjects: InteractiveObject[];
 }
 
 // ─── Interactive world objects (proximity triggers) ───────────────────────────
