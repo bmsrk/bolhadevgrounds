@@ -40,7 +40,7 @@ export function loadMap(def: MapDefinition): GameMap {
   const cached = _cache.get(def.id);
   if (cached) return cached;
 
-  const map = generateMap(def.seed, def.rooms);
+  const map = generateMap(def.seed, def.room);
   _cache.set(def.id, map);
   return map;
 }
