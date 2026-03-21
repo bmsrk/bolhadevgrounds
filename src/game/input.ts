@@ -4,6 +4,7 @@ export interface InputState {
   left: boolean;
   right: boolean;
   sprint: boolean;
+  interact: boolean;   // E key — trigger proximity interaction / sit
 }
 
 const _state: InputState = {
@@ -12,6 +13,7 @@ const _state: InputState = {
   left: false,
   right: false,
   sprint: false,
+  interact: false,
 };
 
 const KEY_MAP: Record<string, keyof InputState> = {
@@ -25,6 +27,7 @@ const KEY_MAP: Record<string, keyof InputState> = {
   KeyD: 'right',
   ShiftLeft: 'sprint',
   ShiftRight: 'sprint',
+  KeyE: 'interact',
 };
 
 function onKeyDown(e: KeyboardEvent): void {

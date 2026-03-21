@@ -16,7 +16,7 @@ import { createAnimator, tickAnimator, facingFromVelocity, CHAR_W, CHAR_H } from
 import { joinGameRoom } from './net/room.js';
 import type { RoomHandle } from './net/room.js';
 import { upsertPeer, recordSample, smoothPeers, evictStalePeers } from './net/presence.js';
-import { initOverlay, appendChatMessage, showNameConflictToast } from './ui/overlay.js';
+import { initOverlay, appendChatMessage, showNameConflictToast, appendSystemMessage, updateRoster } from './ui/overlay.js';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -121,6 +121,8 @@ const state: GameState = {
   zoneFlash:        null,
   currentZoneLabel: null,
   proximityTooltip: null,
+  isSitting:        false,
+  localEmote:       null,
 };
 
 // ── Canvas setup ──────────────────────────────────────────────────────────
@@ -214,6 +216,9 @@ function handleMsg(msg: NetMsg, peerId: string): void {
           character: state.local.character,
           variant:   state.local.variant,
         }, peerId);
+        // System message: peer joined
+        appendSystemMessage(`${msg.name} joined the room`);
+        updateRoster(state.peers, activeMap.zones, state.local.name);
       }
       // Race-condition: another peer arrived at the same time with the same name.
       // The peer whose playerId sorts later loses and gets an auto-suffix.
@@ -233,7 +238,7 @@ function handleMsg(msg: NetMsg, peerId: string): void {
     }
 
     case 'state':
-      recordSample(state.peers, peerId, msg.x, msg.y, msg.seq, msg.ts, msg.animState, msg.facing);
+      recordSample(state.peers, peerId, msg.x, msg.y, msg.seq, msg.ts, msg.animState, msg.facing, msg.isTyping);
       // Sync peer animator state so it advances frames locally
       {
         let peerAnim = state.peerAnimators.get(peerId);
@@ -254,9 +259,15 @@ function handleMsg(msg: NetMsg, peerId: string): void {
       break;
     }
 
-    case 'bye':
+    case 'bye': {
+      const byePeer = state.peers.get(peerId);
+      if (byePeer && _nameEntered) {
+        appendSystemMessage(`${byePeer.name} left the room`);
+      }
       state.peers.delete(peerId);
+      updateRoster(state.peers, activeMap.zones, state.local.name);
       break;
+    }
 
     case 'namechange': {
       const peer = state.peers.get(peerId);
@@ -264,6 +275,18 @@ function handleMsg(msg: NetMsg, peerId: string): void {
       // Optional safety check: ensure the claimed playerId matches the stored one
       if (msg.playerId !== undefined && msg.playerId !== peer.playerId) break;
       peer.name = msg.name;
+      updateRoster(state.peers, activeMap.zones, state.local.name);
+      break;
+    }
+
+    case 'emote': {
+      // Find the peer whose playerId matches (may differ from peerId)
+      for (const peer of state.peers.values()) {
+        if (peer.playerId === msg.playerId) {
+          peer.emote = { emoji: msg.emoji, expiresAt: Date.now() + 2000 };
+          break;
+        }
+      }
       break;
     }
   }
@@ -289,7 +312,13 @@ roomHandle = joinGameRoom(
   },
   // onPeerLeave
   (peerId: string) => {
+    // Only show the leave message if the peer wasn't already removed by a 'bye' message
+    const peer = state.peers.get(peerId);
+    if (peer && _nameEntered) {
+      appendSystemMessage(`${peer.name} left the room`);
+    }
     state.peers.delete(peerId);
+    updateRoster(state.peers, activeMap.zones, state.local.name);
   },
   handleMsg,
 );
@@ -382,6 +411,7 @@ setInterval(() => {
     ts:        Date.now(),
     animState: state.localAnimator.state,
     facing:    state.localAnimator.facing,
+    isTyping:  state.isTyping,
   });
 }, Math.round(1000 / SEND_HZ));
 
@@ -390,14 +420,61 @@ setInterval(() => {
   evictStalePeers(state.peers);
 }, 2_000);
 
+// ── Emote key map (1–9 keys) ──────────────────────────────────────────────
+
+const EMOTE_MAP: Record<string, string> = {
+  Digit1: '👋', Digit2: '😄', Digit3: '👍', Digit4: '❤️', Digit5: '🎉',
+  Digit6: '🤔', Digit7: '😂', Digit8: '🙌', Digit9: '💡',
+};
+
+window.addEventListener('keydown', (e: KeyboardEvent) => {
+  if (state.isTyping) return;
+  const emoji = EMOTE_MAP[e.code];
+  if (!emoji) return;
+  // Show locally
+  state.localEmote = { emoji, expiresAt: Date.now() + 2000 };
+  // Broadcast to peers
+  roomHandle?.send({ type: 'emote', playerId: state.local.id, emoji });
+});
+
+// ── Rising-edge interact (E key) tracking ─────────────────────────────────
+
+let _prevInteract = false;
+
+// ── Roster refresh interval ───────────────────────────────────────────────
+
+setInterval(() => {
+  if (_nameEntered) updateRoster(state.peers, activeMap.zones, state.local.name);
+}, 2_000);
+
 // ── Game loop ─────────────────────────────────────────────────────────────
 
 startLoop((dt: number) => {
   const input = getInput();
 
+  // ── Interact (E) rising edge — sit / stand toggle ─────────────────────
+  const interactJustPressed = !state.isTyping && input.interact && !_prevInteract;
+  _prevInteract = input.interact;
+
+  if (interactJustPressed) {
+    if (state.isSitting) {
+      // Stand up
+      state.isSitting = false;
+    } else {
+      // Check for a nearby 'sit' interactive object
+      const seatObj = activeMap.interactiveObjects.find(obj => {
+        if (obj.action !== 'sit') return false;
+        const ddx = state.local.x - obj.x;
+        const ddy = state.local.y - obj.y;
+        return ddx * ddx + ddy * ddy < obj.r * obj.r;
+      });
+      if (seatObj) state.isSitting = true;
+    }
+  }
+
   // ── Movement ───────────────────────────────────────────────────────────
   let facingDir: Facing | null = null;
-  if (!state.isTyping) {
+  if (!state.isTyping && !state.isSitting) {
     const moved = movePlayer(state.local, input, activeMap.colliders, dt);
     if (moved) {
       const dx = (input.right ? 1 : 0) - (input.left ? 1 : 0);
@@ -407,16 +484,37 @@ startLoop((dt: number) => {
   }
 
   // ── Local animator ────────────────────────────────────────────────────
-  const moving = !state.isTyping &&
+  const moving = !state.isTyping && !state.isSitting &&
     (input.up || input.down || input.left || input.right);
-  tickAnimator(state.localAnimator, moving, input.sprint, facingDir, dt);
+  tickAnimator(
+    state.localAnimator,
+    moving,
+    input.sprint,
+    facingDir,
+    dt,
+    state.isSitting ? 'sit' : undefined,
+  );
 
   // ── Peer animators (advance frames locally between network updates) ───
   for (const [peerId, anim] of state.peerAnimators) {
     if (!state.peers.has(peerId)) { state.peerAnimators.delete(peerId); continue; }
-    const peerMoving   = anim.state === 'walk' || anim.state === 'run';
-    const peerSprinting = anim.state === 'run';
-    tickAnimator(anim, peerMoving, peerSprinting, null, dt);
+    const isSit       = anim.state === 'sit' || anim.state === 'sit2' || anim.state === 'sit3';
+    const peerMoving  = !isSit && (anim.state === 'walk' || anim.state === 'run');
+    const peerSprint  = anim.state === 'run';
+    tickAnimator(anim, peerMoving, peerSprint, null, dt, isSit ? anim.state : undefined);
+  }
+
+  // ── Expire local emote ────────────────────────────────────────────────
+  if (state.localEmote && state.localEmote.expiresAt <= Date.now()) {
+    state.localEmote = null;
+  }
+
+  // ── Expire peer emotes ────────────────────────────────────────────────
+  const now = Date.now();
+  for (const peer of state.peers.values()) {
+    if (peer.emote && peer.emote.expiresAt <= now) {
+      peer.emote = null;
+    }
   }
 
   // ── Zone detection (show flash on enter) ─────────────────────────────
@@ -460,12 +558,14 @@ startLoop((dt: number) => {
 
   // ── Proximity tooltip ─────────────────────────────────────────────────
   state.proximityTooltip = null;
-  for (const obj of activeMap.interactiveObjects) {
-    const ddx = state.local.x - obj.x;
-    const ddy = state.local.y - obj.y;
-    if (ddx * ddx + ddy * ddy < obj.r * obj.r) {
-      state.proximityTooltip = obj.label;
-      break;
+  if (!state.isSitting) {
+    for (const obj of activeMap.interactiveObjects) {
+      const ddx = state.local.x - obj.x;
+      const ddy = state.local.y - obj.y;
+      if (ddx * ddx + ddy * ddy < obj.r * obj.r) {
+        state.proximityTooltip = obj;
+        break;
+      }
     }
   }
 

@@ -41,6 +41,8 @@ export function upsertPeer(
       variant,
       animState: 'idle_anim',
       facing:    'down',
+      isTyping:  false,
+      emote:     null,
       renderX:   x,
       renderY:   y,
       samples:   [{ x, y, ts: Date.now() }],
@@ -60,6 +62,7 @@ export function recordSample(
   ts:        number,
   animState: AnimState,
   facing:    Facing,
+  isTyping?: boolean,
 ): void {
   const peer = store.get(peerId);
   if (!peer) return;
@@ -70,6 +73,7 @@ export function recordSample(
   peer.lastSeen  = Date.now();
   peer.animState = animState;
   peer.facing    = facing;
+  peer.isTyping  = isTyping ?? false;
 
   const sample: PositionSample = { x, y, ts };
   peer.samples.push(sample);

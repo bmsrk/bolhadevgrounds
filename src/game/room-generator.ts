@@ -357,7 +357,7 @@ function placeBigRoomFurniture(rng: () => number): BigRoomPlacement {
     });
     colliders.push({ x: dx, y: deskY, w: deskW, h: deskH });
   }
-  interactiveObjects.push({ x: 560, y: deskY + deskH + 30, r: 60, label: '💻 Open workspace' });
+  interactiveObjects.push({ x: 560, y: deskY + deskH + 30, r: 60, label: '💻 Open workspace', action: 'use' });
 
   // ── West wall: whiteboard (x = 32–80, y = 256–304) ───────────────────────
   // x = 32 < 240 clear-zone boundary ✓
@@ -367,7 +367,7 @@ function placeBigRoomFurniture(rng: () => number): BigRoomPlacement {
     tileSprites: makeTileComposite('interiors', Array.from({ length: 3 }, () => [648, 648, 648])),
   });
   colliders.push({ x: wbX, y: wbY, w: wbW, h: wbH });
-  interactiveObjects.push({ x: wbX + wbW + 35, y: wbY + wbH / 2, r: 50, label: '📋 Whiteboard' });
+  interactiveObjects.push({ x: wbX + wbW + 35, y: wbY + wbH / 2, r: 50, label: '📋 Whiteboard', action: 'use' });
 
   // ── East wall: server rack (x = 1232–1264, y = 48–240) ───────────────────
   // x = 1232 > 1040 clear-zone boundary ✓
@@ -380,7 +380,7 @@ function placeBigRoomFurniture(rng: () => number): BigRoomPlacement {
     tileSprites: makeTileComposite('interiors', Array.from({ length: srTilesH }, () => [152, 152])),
   });
   colliders.push({ x: srX, y: srY, w: 2 * TILE_W, h: srH, label: 'server-rack' });
-  interactiveObjects.push({ x: srX - 40, y: srY + srH / 2, r: 50, label: '⚙️ Server rack' });
+  interactiveObjects.push({ x: srX - 40, y: srY + srH / 2, r: 50, label: '⚙️ Server rack', action: 'use' });
 
   // ── South wall: lounge area (y ≥ 592) ────────────────────────────────────
   // All south furniture sits at y ≥ 592 > 560 clear-zone boundary ✓
@@ -403,7 +403,7 @@ function placeBigRoomFurniture(rng: () => number): BigRoomPlacement {
     tileSprites: makeTileComposite('interiors', sofaRows),
   });
   colliders.push({ x: 19 * TILE_W, y: sofaY, w: 6 * TILE_W, h: 2 * TILE_H });
-  interactiveObjects.push({ x: 16 * TILE_W, y: sofaY - 20, r: 55, label: '🛋️ Lounge area' });
+  interactiveObjects.push({ x: 16 * TILE_W, y: sofaY - 20, r: 55, label: '🛋️ Lounge area', action: 'sit' });
 
   // TV on south wall
   const tvW = 8 * TILE_W, tvH = 2 * TILE_H;
@@ -414,7 +414,7 @@ function placeBigRoomFurniture(rng: () => number): BigRoomPlacement {
     tileSprites: makeTileComposite('interiors', Array.from({ length: 2 }, () => Array(8).fill(152))),
   });
   colliders.push({ x: tvX, y: tvY, w: tvW, h: tvH });
-  interactiveObjects.push({ x: tvX + tvW / 2, y: tvY - 20, r: 55, label: '📺 Chill zone' });
+  interactiveObjects.push({ x: tvX + tvW / 2, y: tvY - 20, r: 55, label: '📺 Chill zone', action: 'sit' });
 
   // ── Corner plants ─────────────────────────────────────────────────────────
   furniture.push({ type: 'rect', x: 2 * TILE_W,             y: 2 * TILE_H,             w: TILE_W, h: TILE_H, color: '#1a6a1a', tileSprite: iT(16) });

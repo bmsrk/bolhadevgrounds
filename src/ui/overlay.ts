@@ -1,4 +1,4 @@
-import type { GameState, ChatEntry, CharacterName, CharacterVariant } from '../types.js';
+import type { GameState, ChatEntry, CharacterName, CharacterVariant, PeerState, Zone } from '../types.js';
 import { MAX_CHAT_MESSAGES, CHAT_MAX_LENGTH } from '../constants.js';
 import { ASSET_BASE } from '../game/sprites.js';
 
@@ -16,6 +16,9 @@ interface OverlayRefs {
   chatInput:    HTMLInputElement;
   chatSendBtn:  HTMLButtonElement;
   debugBtn:     HTMLButtonElement;
+  rosterPanel:  HTMLDivElement;
+  rosterList:   HTMLUListElement;
+  rosterCount:  HTMLSpanElement;
 }
 
 const CHAR_NAMES: readonly CharacterName[]   = ['Adam', 'Alex', 'Amelia', 'Bob'];
@@ -349,6 +352,69 @@ export function initOverlay(
         pointer-events: auto;
       }
       #debug-btn:hover { background: rgba(255,80,80,0.25); }
+
+      /* ── Player roster ──────────────────────────────────────────── */
+      #roster-panel {
+        position: absolute;
+        top: 52px; left: 16px;
+        width: 180px;
+        background: rgba(15,15,30,0.88);
+        border: 1px solid rgba(74,158,255,0.18);
+        border-radius: 10px;
+        pointer-events: auto;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+        overflow: hidden;
+      }
+      #roster-header {
+        padding: 7px 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #4a9eff;
+        border-bottom: 1px solid rgba(74,158,255,0.15);
+        background: rgba(74,158,255,0.06);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      #roster-count {
+        background: rgba(74,158,255,0.2);
+        border-radius: 10px;
+        padding: 1px 8px;
+        font-size: 0.72rem;
+        color: #7ab8ff;
+      }
+      #roster-list {
+        list-style: none;
+        margin: 0;
+        padding: 6px 0;
+        max-height: 200px;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(74,158,255,0.3) transparent;
+      }
+      #roster-list li {
+        padding: 4px 12px;
+        font-size: 0.76rem;
+        color: #ccc;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      #roster-list li .roster-dot {
+        width: 7px; height: 7px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        background: #2ecc71;
+      }
+      #roster-list li .roster-zone {
+        color: #555566;
+        font-size: 0.68rem;
+        margin-left: auto;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 70px;
+      }
     </style>
 
     <div id="name-panel">
@@ -381,6 +447,14 @@ export function initOverlay(
       </div>
     </div>
 
+    <div id="roster-panel" style="display:none">
+      <div id="roster-header">
+        🧑‍💻 Online
+        <span id="roster-count">0</span>
+      </div>
+      <ul id="roster-list"></ul>
+    </div>
+
     <button id="debug-btn">Debug</button>
   `;
 
@@ -397,6 +471,9 @@ export function initOverlay(
     chatInput:    overlay.querySelector('#chat-input')    as HTMLInputElement,
     chatSendBtn:  overlay.querySelector('#chat-send-btn') as HTMLButtonElement,
     debugBtn:     overlay.querySelector('#debug-btn')     as HTMLButtonElement,
+    rosterPanel:  overlay.querySelector('#roster-panel')  as HTMLDivElement,
+    rosterList:   overlay.querySelector('#roster-list')   as HTMLUListElement,
+    rosterCount:  overlay.querySelector('#roster-count')  as HTMLSpanElement,
   };
 
   // Pre-fill saved name
@@ -539,6 +616,7 @@ function saveNameEntry(): void {
   _refs.namePanel.style.display   = 'none';
   _refs.roomInfoBar.style.display = '';
   _refs.chatPanel.style.display   = '';
+  _refs.rosterPanel.style.display = '';
 }
 
 function sendChat(): void {
@@ -567,6 +645,65 @@ export function appendChatMessage(entry: ChatEntry): void {
                   `<span class="text">${escapeHtml(entry.text)}</span>`;
   chatMessages.appendChild(div);
   chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+/**
+ * Append a system event message (join / leave / zone change) in the chat panel.
+ * Displayed in a distinct italic style.
+ */
+export function appendSystemMessage(text: string): void {
+  if (!_refs) return;
+  const { chatMessages } = _refs;
+
+  while (chatMessages.children.length >= MAX_CHAT_MESSAGES) {
+    chatMessages.removeChild(chatMessages.firstChild!);
+  }
+
+  const div = document.createElement('div');
+  div.className = 'chat-msg chat-system';
+  div.style.cssText = 'font-style:italic; color:#778; font-size:0.73rem;';
+  div.textContent = text;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+/**
+ * Refresh the player roster panel.
+ * @param peers    - Current peer map (key = trystero peerId)
+ * @param zones    - Zone definitions from the active GameMap (for zone label lookup)
+ * @param localName - The local player's display name (shown first in the list)
+ */
+export function updateRoster(
+  peers:     Map<string, PeerState>,
+  zones:     Zone[],
+  localName: string,
+): void {
+  if (!_refs) return;
+  const { rosterList, rosterCount } = _refs;
+
+  const count = peers.size + 1;  // +1 for local player
+  rosterCount.textContent = String(count);
+
+  rosterList.innerHTML = '';
+
+  // Local player (always first, marked with a star)
+  const selfLi = document.createElement('li');
+  selfLi.innerHTML = `<span class="roster-dot" style="background:#4a9eff"></span>` +
+                     `<span>${escapeHtml(localName)} <span style="color:#4a9eff;font-size:0.66rem">(you)</span></span>`;
+  rosterList.appendChild(selfLi);
+
+  // Peers
+  for (const peer of peers.values()) {
+    const zone = zones.find(z =>
+      peer.renderX >= z.x && peer.renderX < z.x + z.w &&
+      peer.renderY >= z.y && peer.renderY < z.y + z.h,
+    );
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="roster-dot"></span>` +
+                   `<span>${escapeHtml(peer.name)}</span>` +
+                   (zone ? `<span class="roster-zone">${escapeHtml(zone.label)}</span>` : '');
+    rosterList.appendChild(li);
+  }
 }
 
 /** Update state-derived UI (called once per frame or on state change). */
