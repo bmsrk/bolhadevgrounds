@@ -127,6 +127,11 @@ export interface FurnitureShape {
   sprite?: string;         // SVG sprite key (legacy – prefer tileSprite)
   /** Pixel-art tile sprite drawn from a loaded TileSheet (see loadTileSheet). */
   tileSprite?: { sheet: string; tileId: number };
+  /**
+   * Multi-tile composite: each entry is drawn at (x + offsetX, y + offsetY)
+   * at the given size. When present, `tileSprite` is ignored.
+   */
+  tileSprites?: { sheet: string; tileId: number; offsetX: number; offsetY: number; w: number; h: number }[];
 }
 
 /**
