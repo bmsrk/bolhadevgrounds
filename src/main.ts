@@ -259,10 +259,15 @@ function handleMsg(msg: NetMsg, peerId: string): void {
       break;
     }
 
-    case 'bye':
+    case 'bye': {
+      const byePeer = state.peers.get(peerId);
+      if (byePeer && _nameEntered) {
+        appendSystemMessage(`${byePeer.name} left the room`);
+      }
       state.peers.delete(peerId);
       updateRoster(state.peers, activeMap.zones, state.local.name);
       break;
+    }
 
     case 'namechange': {
       const peer = state.peers.get(peerId);
@@ -307,6 +312,7 @@ roomHandle = joinGameRoom(
   },
   // onPeerLeave
   (peerId: string) => {
+    // Only show the leave message if the peer wasn't already removed by a 'bye' message
     const peer = state.peers.get(peerId);
     if (peer && _nameEntered) {
       appendSystemMessage(`${peer.name} left the room`);

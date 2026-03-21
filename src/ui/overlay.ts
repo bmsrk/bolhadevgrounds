@@ -407,7 +407,7 @@ export function initOverlay(
         background: #2ecc71;
       }
       #roster-list li .roster-zone {
-        color: #556;
+        color: #555566;
         font-size: 0.68rem;
         margin-left: auto;
         white-space: nowrap;
