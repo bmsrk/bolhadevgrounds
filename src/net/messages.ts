@@ -54,7 +54,8 @@ export function decodeMsg(raw: unknown): NetMsg | null {
           ? obj['animState'] : 'idle_anim') as AnimState;
         const facing = (FACINGS.includes(obj['facing'] as string)
           ? obj['facing'] : 'down') as Facing;
-        return { type: 'state', playerId: obj['playerId'], x: obj['x'], y: obj['y'], seq: obj['seq'], ts: obj['ts'], animState, facing };
+        const isTyping = obj['isTyping'] === true;
+        return { type: 'state', playerId: obj['playerId'], x: obj['x'], y: obj['y'], seq: obj['seq'], ts: obj['ts'], animState, facing, isTyping };
       }
       break;
     case 'chat':
@@ -76,6 +77,11 @@ export function decodeMsg(raw: unknown): NetMsg | null {
     case 'namechange':
       if (typeof obj['playerId'] === 'string' && typeof obj['name'] === 'string') {
         return { type: 'namechange', playerId: obj['playerId'], name: obj['name'] };
+      }
+      break;
+    case 'emote':
+      if (typeof obj['playerId'] === 'string' && typeof obj['emoji'] === 'string') {
+        return { type: 'emote', playerId: obj['playerId'], emoji: obj['emoji'] };
       }
       break;
   }

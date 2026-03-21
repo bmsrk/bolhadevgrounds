@@ -47,6 +47,7 @@ export interface StateMsg {
   ts:        number;       // Date.now()
   animState: AnimState;
   facing:    Facing;
+  isTyping?: boolean;      // true while the sender has the chat input focused
 }
 
 export interface ChatMsg {
@@ -69,7 +70,13 @@ export interface NameChangeMsg {
   name:     string;
 }
 
-export type NetMsg = HelloMsg | StateMsg | ChatMsg | ByeMsg | NameChangeMsg;
+export interface EmoteMsg {
+  type:      'emote';
+  playerId:  string;
+  emoji:     string;
+}
+
+export type NetMsg = HelloMsg | StateMsg | ChatMsg | ByeMsg | NameChangeMsg | EmoteMsg;
 
 // ─── Peer state (maintained locally) ─────────────────────────────────────────
 
@@ -88,6 +95,8 @@ export interface PeerState {
   variant:   CharacterVariant;
   animState: AnimState;
   facing:    Facing;
+  isTyping:  boolean;      // true while the peer has the chat input focused
+  emote:     { emoji: string; expiresAt: number } | null;  // floating emote bubble
   // Rendered position (smoothed)
   renderX:  number;
   renderY:  number;
@@ -171,10 +180,12 @@ export interface GameMap {
 // ─── Interactive world objects (proximity triggers) ───────────────────────────
 
 export interface InteractiveObject {
-  x:     number;
-  y:     number;
-  r:     number;           // trigger radius
-  label: string;           // tooltip text shown on proximity
+  x:      number;
+  y:      number;
+  r:      number;           // trigger radius
+  label:  string;           // tooltip text shown on proximity
+  /** Interaction type — 'sit' locks movement and plays sit anim; 'use' shows a use prompt. */
+  action?: 'sit' | 'use';
 }
 
 // ─── Ambient particles ────────────────────────────────────────────────────────
@@ -211,5 +222,9 @@ export interface GameState {
   particles:        Particle[];
   zoneFlash:        { label: string; alpha: number; color: string } | null;
   currentZoneLabel: string | null;
-  proximityTooltip: string | null;
+  proximityTooltip: InteractiveObject | null;
+  // Milestone 1 – interactivity
+  isSitting:        boolean;                 // true while local player is seated
+  // Milestone 2 – presence
+  localEmote:       { emoji: string; expiresAt: number } | null;
 }

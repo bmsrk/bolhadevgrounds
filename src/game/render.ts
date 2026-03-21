@@ -137,11 +137,11 @@ export function render(
   for (const peer of state.peers.values()) {
     const peerAnim: Readonly<Animator> = state.peerAnimators.get(peer.peerId)
       ?? { state: 'idle_anim', facing: 'down', frame: 0, timer: 0 };
-    drawPlayer(ctx, peer.renderX, peer.renderY, peer.color, peer.name, false, peer.character, peer.variant, peerAnim);
+    drawPlayer(ctx, peer.renderX, peer.renderY, peer.color, peer.name, false, peer.character, peer.variant, peerAnim, peer.isTyping, peer.emote);
   }
 
   // ── Local player ──────────────────────────────────────────────────────────
-  drawPlayer(ctx, state.local.x, state.local.y, state.local.color, state.local.name, true, state.local.character, state.local.variant, state.localAnimator);
+  drawPlayer(ctx, state.local.x, state.local.y, state.local.color, state.local.name, true, state.local.character, state.local.variant, state.localAnimator, false, state.localEmote);
 
   // ── Ambient particles (Lounge dust motes) ────────────────────────────────
   for (const p of state.particles) {
@@ -184,7 +184,12 @@ export function render(
 
   // ── Proximity tooltip ─────────────────────────────────────────────────────
   if (state.proximityTooltip) {
-    const text = state.proximityTooltip;
+    const tooltipObj = state.proximityTooltip;
+    const text = tooltipObj.action === 'sit'
+      ? `[E] Sit — ${tooltipObj.label}`
+      : tooltipObj.action === 'use'
+        ? `[E] Use — ${tooltipObj.label}`
+        : tooltipObj.label;
     const cx   = state.local.x + offX;
     const cy   = state.local.y + offY - CHAR_H * 2 - 28;
 
@@ -223,6 +228,8 @@ function drawPlayer(
   character: CharacterName,
   variant:   CharacterVariant,
   anim:      Readonly<Animator>,
+  isTyping?: boolean,
+  emote?:    { emoji: string; expiresAt: number } | null,
 ): void {
   const DW = CHAR_W * 2;            // 32 px on canvas
   const DH = CHAR_H * 2;            // 64 px on canvas
@@ -275,6 +282,44 @@ function drawPlayer(
   ctx.fillStyle    = isLocal ? '#ffffff' : '#e0e0e0';
   ctx.fillText(name, x, dy - 3);
   ctx.restore();
+
+  // ── Typing indicator bubble ───────────────────────────────────────────────
+  if (isTyping) {
+    const bx = x;
+    const by = dy - 20;   // just above the name tag
+    ctx.save();
+    ctx.font      = '11px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    const tw = ctx.measureText('…').width;
+    const bw = tw + 14;
+    const bh = 16;
+    ctx.fillStyle   = 'rgba(60,120,220,0.85)';
+    ctx.beginPath();
+    ctx.roundRect(bx - bw / 2, by - bh / 2, bw, bh, 8);
+    ctx.fill();
+    ctx.fillStyle    = '#ffffff';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('…', bx, by);
+    ctx.restore();
+  }
+
+  // ── Floating emote bubble ─────────────────────────────────────────────────
+  if (emote && emote.expiresAt > Date.now()) {
+    const remaining = (emote.expiresAt - Date.now()) / 2000;  // 0 → 1 as fresh
+    const fadeAlpha = Math.min(1, remaining * 3);             // fade out last ~0.3 s
+    const rise      = (1 - remaining) * -18;                  // float upward
+    const ex  = x;
+    const ey  = dy - 28 + rise;
+    ctx.save();
+    ctx.globalAlpha  = fadeAlpha;
+    ctx.font         = '18px serif';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.shadowColor  = 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur   = 4;
+    ctx.fillText(emote.emoji, ex, ey);
+    ctx.restore();
+  }
 }
 
 function drawFurniture(ctx: CanvasRenderingContext2D, f: FurnitureShape): void {

@@ -107,6 +107,7 @@ export function createAnimator(): Animator {
  * @param sprinting      - Sprint key held
  * @param facingOverride - Facing derived from movement direction (null = keep current)
  * @param dt             - Delta-time in seconds
+ * @param forcedState    - When set, lock the animator into this state (e.g. 'sit')
  */
 export function tickAnimator(
   anim:           Animator,
@@ -114,8 +115,9 @@ export function tickAnimator(
   sprinting:      boolean,
   facingOverride: Facing | null,
   dt:             number,
+  forcedState?:   AnimState,
 ): void {
-  const desired: AnimState = moving ? (sprinting ? 'run' : 'walk') : 'idle_anim';
+  const desired: AnimState = forcedState ?? (moving ? (sprinting ? 'run' : 'walk') : 'idle_anim');
 
   if (desired !== anim.state) {
     anim.state = desired;
